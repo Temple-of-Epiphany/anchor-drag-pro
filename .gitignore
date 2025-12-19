@@ -1,0 +1,30 @@
+# Build directories
+build/
+cmake-build-*/
+*.bin
+*.elf
+*.map
+
+# ESP-IDF specific
+sdkconfig.old
+*.pyc
+.cache/
+
+# IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Backups
+backups/
+
+# Dependencies
+dependencies/
+managed_components/

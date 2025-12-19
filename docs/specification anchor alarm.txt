@@ -1,0 +1,176 @@
+Hardware:
+	a. WIO Terminal: (wiki: https://wiki.seeedstudio.com/Wio_Terminal_Intro/)
+	b. Canbus adapter for GPS information and Time Information (default setting): I2C CAN-BUS Module based on MCP2551 and MCP2515. PGN 129029 format. (Wiki: https://docs.longan-labs.cc/1030017/)
+	c. Local GPS: https://www.seeedstudio.com/SeeedGrove-GPS-Air530-p-4584.html (Wiki: https://wiki.seeedstudio.com/Grove-GPS-Air530/). GPS example data and users manuals are located here: https://github.com/sivaelid/Heltec_AB02S_Mods/tree/master
+	d. GPS data from a file on the SD card. *(if the file GPS-DEMO.TXT, exists this is the source setting and overrides the default). This data is in PGN 129029 format with the following fields: Latitude,Longitude,Altitude_mm,Position_Accuracy_cm,Time_of_Fix_1e-4s. Line 1 is a heading line.
+	e. IMU: Wiki (https://wiki.seeedstudio.com/Wio-Terminal-IMU-Basic/)
+	f. Buzzer: WIki( https://wiki.seeedstudio.com/Wio-Terminal-Buzzer/)
+	g. Defined pins:
+		BCM2 and BCM3 will be used for GPS data either via canbus(ic2) or local GPS(serial).
+		BCM27 will be the alarm pin and will go to ground during an alarm conduction.
+		
+CANBUS GPS Source Data is formatted in:  PGN 129029 format. There will need to be code to read from the canbus and format the data for use.
+	Latitude,Longitude,Altitude_mm,Position_Accuracy_cm,Time_of_Fix_1e-4s
+	
+	
+
+AnchorDragAlarm/
+├── AnchorDragAlarm.ino
+├── config.h (Pins and colors for objects along with configuration parameters are here)
+├── ui_manager.h
+├── ui_manager.cpp
+├── image_manager.h
+├── image_manager.cpp
+├── anchor_logo.bmp         <-- (Place this file on the SD card, a copy will also be in the sketch directory)
+
+WIO Terminal Key Mapping: (Wiki: https://wiki.seeedstudio.com/Wio-Terminal-Buttons/)
+	BUTTON_1: Arm the Alarm
+	BUTTON_2: Silence the Alarm (Turns off the Alarm, but keeps the information on the screen
+	BUTTON_3: Deactivate the Alarm
+	
+WIO Joystick: (Wiki: https://wiki.seeedstudio.com/Wio-Terminal-Switch/)
+	WIO_5S_UP, WIO_5S_DOWN, WIO_5S_LEFT, WIO_5S_RIGHT and WIO_5S_PRESS
+	This is used for programming the configuration. 
+	WIO_5S_PRESS = OK/ENTER
+	WIO_5S_UP / WIO_5S_DOWN increase/decrease a parameter
+	WIO_5S_LEFT / WIO_5S_RIGHT is used to switch between configuration parameters.
+	
+WIO_BUZZER: Will sound as the alarm if configured. (Wiki: https://wiki.seeedstudio.com/Wio-Terminal-Buzzer/)
+
+BCM2 and BCM3 will be used for GPS data either via canbus or local GPS.
+BCM27 will be the alarm pin and will go to ground during an alarm conduction.
+
+FILE: anchor_logo.bmp will be the power on logo and will reside on the SD Card.
+	(SDCARD_SS_PIN, SDCARD_SPI) as defined in config.h
+	Wiki: https://wiki.seeedstudio.com/Wio-Terminal-FS-ReadWrite/
+	
+RTC (Realtime Clock): Wiki: https://wiki.seeedstudio.com/Wio-Terminal-RTC/
+	This will be updated from GPS time if it is more than 5 seconds off.
+	
+SD Card: SDCARD_SS_PIN, SDCARD_SPI
+	When the Alarm is armed, every 1 second, the GPS coordinates will be written to a file on the SD card named. GPS-YYYY-MM-DD.log (YYYY=Year, MM=Month number, DD=Day number)
+	ERROR conditions will be written to a log file ERROR-YYYY-MM-DD.log (YYYY=Year, MM=Month number, DD=Day number) Errors are like missing file for logo
+	Events non-error will be written to a file EVENTS-YYYY-MM-DD.log (YYYY=Year, MM=Month number, DD=Day number). Events are items like arm, disarm, configuration changed, alarm condition)
+	
+Configuration Screen: To enter into the configuration screen, press and hold the joystick for 5 seconds. (WIO_5S_PRESS)
+	Parameters:
+		DISTANCE_ALARM: integer between 25 and 250 defined as the number of feet that the anchor as moved.
+		GPS_SOURCE: CANBUS or LOCAL (If Local PINS should be defined in config.h ahead of time)
+		ALARM: PANEL, BUZZER, BOTH
+		
+Modular Code Structure:
+
+		
+Operation Screen:
+	Parameters:
+		Time: Show the time of the Real Time Clock (RTC).
+		Status: Ready, Armed, Arming, Alarm, Error
+		Location: Current GPS Location updated every 5 seconds
+		Anchor Location: GPS Coordinates of the calculated Anchor
+		Heart Graphic: Blinks when GPS data arrives but not more than 1 time per second. The time per second should be set in config.h. Position for heart is upper right corner. Initial condition is an outline in black of a heart. Once data is being received the inside of the outline will blink red/white and the outline will remain as a black color.
+
+Map Screen:
+		When the status is in any condition other than Alarm or Error, a map is drawn using the anchor as the center point. The calculated circle is drawn. The original circle and anchor points do not change unless a new request for Arming occurs by pressing BUTTON_1.
+		If no circle, arc or anchor position is calculated, the first GPS data point is the center and all points after that are plotted relative to the original GPS data point. Once a circle, arc and anchor point are calculated the screen is cleared and the arc, circle and anchor are plotted with the anchor point being the center. As soon as the arc is calculated it is drawn, as soon as a circle is calculated it will replace the arc. The initial arc should remain on the screen for 60 seconds before the circle is drawn. (this time parameter of 60 seconds is set in config.h named (ARMING_TIME)
+		
+		
+Ready Status:
+	This status is when the unit is turned on and is receiving GPS and TIME information.
+	the background is light blue.
+
+Alert Status:
+	A potential alarm condition exists but has not exceeded the threshold for an Alarm (i.e. GPS Signal Lost, Anchor as moved more than 10' but has not exceeded DISTANCE_ALARM.
+	Background moves to yellow color, status message changes to ALERT in bold font. If the condition resolves, the the message and screen will return to the Alarmed settings.
+	
+Error Status:
+	No GPS data is arriving and/or an error of some time is detected. SD card is not inserted, SD card does not contain a logo. SD Card is full. The background of the screen is orange. The status word "error" is blinking, bold, and red.
+	
+Arming Status:
+	The BUTTON_1 is pressed to arm and the current anchor location is being calculated. Once the anchor location is calculated, the status will change to Armed. The background of the screen is green. The status word "arming" is blinking and bold. 
+		
+Armed Status:
+	The anchor position is calculated and displayed. The background of the screen is green. In this status, the current anchor position is recalculated every 1 minute. If the location is outside of the calculated circle and has moved more than the configured DISTANCE_ALARM value in feet then the condition moves to alarm. The display will show the original anchor position at all times, and the newest calculated position with the difference in feet displayed on the screen next to the DISTANCE_ALARM value. 
+	
+	Example:
+		Anchor Location: Latitude: 40.6892° N, Longitude: 74.0445° W
+		Current Anchor Location: Latitude: 40.6892° N. Longitude: 74.0444° W
+		Distance from original location: 25' feet from alarm condition: 25 (Assuming Distance_Alarm is set to 50 feet)
+		Distance to Alarm is (DISTANCE_ALARM)
+		
+Circle and Anchor Position calculation:
+	The safety circle is the calculated arc (and circle)
+	The anchor position is calculated from an arc of points.
+	Method:
+		Every 1 second, the GPS location is plotted using a scatter plot
+		
+Example: the logic to compute GPS coordinates forming a circle around a central latitude/longitude point using the equirectangular approximation for small distances (like 25 feet).
+
+This code:
+	•	Uses math.h for trig functions
+	•	Calculates 100 points around a circle
+	•	Outputs the lat/lon coordinates of each point
+	
+	#include <stdio.h>
+#include <math.h>
+
+#define NUM_POINTS 100
+#define PI 3.14159265358979323846
+
+int main() {
+    // Center coordinate: Statue of Liberty
+    double lat_center = 40.6892;
+    double lon_center = -74.0445;
+
+    // Radius in feet
+    double radius_ft = 25.0;
+
+    // Approximate conversion factors
+    double feet_per_deg_lat = 364000.0;
+    double feet_per_deg_lon = feet_per_deg_lat * cos(lat_center * PI / 180.0);
+
+    // Degree offsets for the radius
+    double delta_lat = radius_ft / feet_per_deg_lat;
+    double delta_lon = radius_ft / feet_per_deg_lon;
+
+    // Generate circle points
+    printf("Circle coordinates around (%.6f, %.6f):\n", lat_center, lon_center);
+    for (int i = 0; i < NUM_POINTS; ++i) {
+        double angle = 2 * PI * i / NUM_POINTS;
+        double lat = lat_center + delta_lat * sin(angle);
+        double lon = lon_center + delta_lon * cos(angle);
+        printf("%2d: Latitude: %.8f, Longitude: %.8f\n", i+1, lat, lon);
+    }
+
+    return 0;
+}
+If needed calculate the arc and center point first and the circle second. 
+
+Logic:
+	BUTTON_1 is pressed (Arming Status)
+	Start Receiving GPS data. (First point received is the center point on the map screen)
+	Points are plotted until an Arc is calculated from the scattered points and remains consistent for 1 minute, ARMING_TIME).
+	After the ARMING_TIME expires, plot the circle from the Arc and the center point of the arc is the Anchor location.
+	Every 1 minute(ARMING_TIME) the Arc is recalculated and the anchor location is derived. 
+	The new anchor location is compared to the original location and against the Alarm and Alert distance parameters.
+
+Possible conditions: If any condition changes, the event is written to the event log on the SD Card.
+	1. The anchor does not move more than the DISTANCE_ALARM (normal condition)
+	2. The anchor does move but not more than the DISTANCE ALARM (normal condition)
+	3. The anchor moves more than DISTANCE Alarm and does not move out of the original circle. (Normal condition)
+	4. The anchor moves more than DISTANCE_ALARM and does move out of the original circle (alarm condition)
+	5. Loss of GPS data after arming. If GPS data does not restart in 60 seconds(this is defined in config.h). (alarm condition)
+	6. Loss of GPS data after arming. The status changes to alert. If the data resumes under the 60 second threshold, the screen changes back to armed.
+	7. The anchor position moves more than 10 feet from original location but is not greater than the DISTANCE ALARM. If the anchor position recalculates to less than 10 feet; the status moves back to Armed. The status changes to alert (and is written to the event file on the SD card.
+	
+	Operational Logic for the program:
+		1. During the boot process, display the logo for 30 seconds (config.h, DISPLAY_LOGO)
+		2. Enter the ready state of the application and monitor the buttons, keys, joystick)
+		3. Start receiving GPS data and displaying heartbeat. If no GPS is attached, check the SD card for GPS-DEMO.TXT if the file is there read the long, lat from the file every 1 second. When you get to the end of the file start over.
+		4. Wait for a button press (BUTTON_1, BUTTON_2, BUTTON_3, or JOYSTICK PRESS)
+		5. Take actions based on the buttons and data from the GPS
+		6. When the screen is in operational mode (not configuration mode), the left and right buttons on the joystick move the screen between Operational Screen, Map Screen and Configuration Screen, if any status changes, the screen moves automatically to the Operational Screen.
+		Every 1 minute check the RTC against the latest GPS fix time; if it is off more than 5 seconds adjust the clock. 
+		Output the RTC time at the beginning of each log file and on the serial port when status changes.
+		
+		
+		

@@ -1,0 +1,23 @@
+# Anchor Drag Pro - SDK Configuration Defaults
+# Target: ESP32-S3-WROOM-1-N16R8 (Waveshare ESP32-S3-Touch-LCD-4.3B)
+# Author: Colin Bitterfield
+# Email: colin@bitterfield.com
+# Date Created: 2025-12-19
+# Date Updated: 2025-12-19
+
+# Target
+CONFIG_IDF_TARGET="esp32s3"
+
+# Flash size 16MB
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+
+# PSRAM 8MB Octal
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_OCT=y
+CONFIG_SPIRAM_SPEED_80M=y
+
+# CPU frequency 240MHz
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
+
+# FreeRTOS tick rate
+CONFIG_FREERTOS_HZ=1000

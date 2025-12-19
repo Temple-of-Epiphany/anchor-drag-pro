@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#000000" stroke-linecap="round" stroke-linejoin="round" id="Satellite--Streamline-Tabler" height="24" width="24">
+  <desc>
+    Satellite Streamline Icon: https://streamlinehq.com
+  </desc>
+  <path d="m3.707 6.293 2.586 -2.586a1 1 0 0 1 1.414 0l5.586 5.586a1 1 0 0 1 0 1.414l-2.586 2.586a1 1 0 0 1 -1.414 0L3.707 7.707a1 1 0 0 1 0 -1.414z" stroke-width="2"></path>
+  <path d="m6 10 -3 3 3 3 3 -3" stroke-width="2"></path>
+  <path d="m10 6 3 -3 3 3 -3 3" stroke-width="2"></path>
+  <path d="m12 12 1.5 1.5" stroke-width="2"></path>
+  <path d="M14.5 17a2.5 2.5 0 0 0 2.5 -2.5" stroke-width="2"></path>
+  <path d="M15 21a6 6 0 0 0 6 -6" stroke-width="2"></path>
+</svg>
