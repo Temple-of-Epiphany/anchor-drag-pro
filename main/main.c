@@ -6,9 +6,10 @@
  * Date Created: 2025-12-19
  * Date Updated: 2025-12-19
  *
- * Version: 0.1.0
+ * Version: 0.1.1
  *
  * Changelog:
+ * - 0.1.1 (2025-12-19): Added splash screen with self-test
  * - 0.1.0 (2025-12-19): Initial version with board configuration and boot info display
  */
 
@@ -20,6 +21,8 @@
 #include "esp_chip_info.h"
 #include "esp_flash.h"
 #include "board_config.h"
+#include "splash_screen.h"
+#include "ui_version.h"
 
 static const char *TAG = "anchor-drag-pro";
 
@@ -273,10 +276,24 @@ static void display_system_status(void) {
  */
 void app_main(void)
 {
-    // Clear screen and display boot information
-    printf("\033[2J\033[H");  // Clear screen and move cursor to top
+    esp_err_t ret;
 
-    // Display all boot information
+    // Clear screen
+    printf("\033[2J\033[H");
+
+    ESP_LOGI(TAG, "=== Anchor Drag Pro Starting ===");
+    ESP_LOGI(TAG, "Firmware Version: %s", FW_VERSION_STRING);
+    ESP_LOGI(TAG, "UI Version: %s", UI_VERSION_STRING);
+    ESP_LOGI(TAG, "Board: %s", BOARD_NAME);
+
+    // Run splash screen with self-test (30 second timeout)
+    ret = splash_screen_run(30);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Splash screen failed: %s", esp_err_to_name(ret));
+    }
+
+    // Display detailed system information after splash
+    printf("\n");
     display_version_info();
     display_chip_info();
     display_libraries();
@@ -290,8 +307,11 @@ void app_main(void)
     printf("\n");
 
     ESP_LOGI(TAG, "Anchor Drag Pro v%s initialized successfully", FW_VERSION_STRING);
-    ESP_LOGI(TAG, "Board: %s", BOARD_NAME);
+    ESP_LOGI(TAG, "UI Version: %s", UI_VERSION_STRING);
     ESP_LOGI(TAG, "Display: %dx%d RGB%d", LCD_WIDTH, LCD_HEIGHT, LCD_COLOR_BITS);
+
+    // TODO: Transition to START screen (Screen 1)
+    ESP_LOGI(TAG, "Next: Implement START screen for mode selection");
 
     // Main application loop
     while (1) {
