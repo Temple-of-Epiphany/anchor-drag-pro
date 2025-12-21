@@ -6,9 +6,10 @@
 
 cmake_minimum_required(VERSION 3.16)
 
-# LVGL configuration
+include($ENV{IDF_PATH}/tools/cmake/project.cmake)
+
+# LVGL configuration - must be after include but before project()
 set(LV_CONF_PATH "${CMAKE_CURRENT_SOURCE_DIR}/lv_conf.h" CACHE STRING "" FORCE)
 idf_build_set_property(COMPILE_OPTIONS "-DLV_CONF_INCLUDE_SIMPLE=1" APPEND)
 
-include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 project(anchor-drag-pro)
