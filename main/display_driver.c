@@ -104,6 +104,20 @@ esp_err_t display_init(void) {
     ESP_LOGI(TAG, "RGB LCD initialized successfully");
     ESP_LOGI(TAG, "Note: RGB panels are always on. Use CH422G EXIO2 to control backlight.");
 
+    // Test pattern: Fill frame buffer with color to verify display works
+    void *fb = NULL;
+    ret = esp_lcd_rgb_panel_get_frame_buffer(display_panel, 1, &fb);
+    if (ret == ESP_OK && fb != NULL) {
+        ESP_LOGI(TAG, "Testing display with blue screen...");
+        uint16_t *fb16 = (uint16_t *)fb;
+        uint32_t pixel_count = LCD_WIDTH * LCD_HEIGHT;
+        // Fill with blue color (RGB565: 0x001F)
+        for (uint32_t i = 0; i < pixel_count; i++) {
+            fb16[i] = 0x001F;  // Blue
+        }
+        ESP_LOGI(TAG, "Display test pattern drawn - should see blue screen");
+    }
+
     return ESP_OK;
 }
 
