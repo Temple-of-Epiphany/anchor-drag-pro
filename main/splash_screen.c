@@ -56,10 +56,9 @@ static void create_splash_ui(void) {
     splash_screen = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(splash_screen, lv_color_hex(0x001F3F), 0);  // Dark blue
 
-    // Title label
+    // Title label (using default font for now)
     title_label = lv_label_create(splash_screen);
     lv_label_set_text(title_label, "ANCHOR DRAG ALARM");
-    lv_obj_set_style_text_font(title_label, &lv_font_montserrat_32, 0);
     lv_obj_set_style_text_color(title_label, lv_color_white(), 0);
     lv_obj_align(title_label, LV_ALIGN_TOP_MID, 0, 40);
 
@@ -70,62 +69,54 @@ static void create_splash_ui(void) {
              "Version %s\nUI %s | FW %s",
              UI_VERSION_STRING, UI_VERSION_STRING, FW_VERSION_STRING);
     lv_label_set_text(version_label, version_text);
-    lv_obj_set_style_text_font(version_label, &lv_font_montserrat_16, 0);
     lv_obj_set_style_text_color(version_label, lv_color_hex(0xAAAAAA), 0);
     lv_obj_set_style_text_align(version_label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_align(version_label, LV_ALIGN_TOP_MID, 0, 90);
+    lv_obj_align(version_label, LV_ALIGN_TOP_MID, 0, 70);
 
     // Loading label
     loading_label = lv_label_create(splash_screen);
     lv_label_set_text(loading_label, "Loading...");
-    lv_obj_set_style_text_font(loading_label, &lv_font_montserrat_20, 0);
     lv_obj_set_style_text_color(loading_label, lv_color_hex(0xFFAA00), 0);
     lv_obj_align(loading_label, LV_ALIGN_CENTER, 0, 0);
 
     // Self-test title (hidden initially)
     selftest_title_label = lv_label_create(splash_screen);
     lv_label_set_text(selftest_title_label, "Hardware Self-Test");
-    lv_obj_set_style_text_font(selftest_title_label, &lv_font_montserrat_24, 0);
     lv_obj_set_style_text_color(selftest_title_label, lv_color_white(), 0);
-    lv_obj_align(selftest_title_label, LV_ALIGN_TOP_MID, 0, 160);
+    lv_obj_align(selftest_title_label, LV_ALIGN_TOP_MID, 0, 140);
     lv_obj_add_flag(selftest_title_label, LV_OBJ_FLAG_HIDDEN);
 
     // TF Card check label
     tf_card_label = lv_label_create(splash_screen);
     lv_label_set_text(tf_card_label, "TF Card: Checking...");
-    lv_obj_set_style_text_font(tf_card_label, &lv_font_montserrat_18, 0);
     lv_obj_set_style_text_color(tf_card_label, lv_color_white(), 0);
-    lv_obj_align(tf_card_label, LV_ALIGN_TOP_LEFT, 60, 210);
+    lv_obj_align(tf_card_label, LV_ALIGN_TOP_LEFT, 60, 180);
     lv_obj_add_flag(tf_card_label, LV_OBJ_FLAG_HIDDEN);
 
     // N2K check label
     n2k_label = lv_label_create(splash_screen);
     lv_label_set_text(n2k_label, "N2K Data: Checking...");
-    lv_obj_set_style_text_font(n2k_label, &lv_font_montserrat_18, 0);
     lv_obj_set_style_text_color(n2k_label, lv_color_white(), 0);
-    lv_obj_align(n2k_label, LV_ALIGN_TOP_LEFT, 60, 245);
+    lv_obj_align(n2k_label, LV_ALIGN_TOP_LEFT, 60, 210);
     lv_obj_add_flag(n2k_label, LV_OBJ_FLAG_HIDDEN);
 
     // NMEA 0183 check label
     nmea_label = lv_label_create(splash_screen);
     lv_label_set_text(nmea_label, "NMEA 0183: Checking...");
-    lv_obj_set_style_text_font(nmea_label, &lv_font_montserrat_18, 0);
     lv_obj_set_style_text_color(nmea_label, lv_color_white(), 0);
-    lv_obj_align(nmea_label, LV_ALIGN_TOP_LEFT, 60, 280);
+    lv_obj_align(nmea_label, LV_ALIGN_TOP_LEFT, 60, 240);
     lv_obj_add_flag(nmea_label, LV_OBJ_FLAG_HIDDEN);
 
     // External GPS check label
     gps_label = lv_label_create(splash_screen);
     lv_label_set_text(gps_label, "External GPS: Checking...");
-    lv_obj_set_style_text_font(gps_label, &lv_font_montserrat_18, 0);
     lv_obj_set_style_text_color(gps_label, lv_color_white(), 0);
-    lv_obj_align(gps_label, LV_ALIGN_TOP_LEFT, 60, 315);
+    lv_obj_align(gps_label, LV_ALIGN_TOP_LEFT, 60, 270);
     lv_obj_add_flag(gps_label, LV_OBJ_FLAG_HIDDEN);
 
     // Status label
     status_label = lv_label_create(splash_screen);
     lv_label_set_text(status_label, "");
-    lv_obj_set_style_text_font(status_label, &lv_font_montserrat_18, 0);
     lv_obj_set_style_text_color(status_label, lv_color_hex(0x00FF00), 0);
     lv_obj_set_style_text_align(status_label, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_align(status_label, LV_ALIGN_BOTTOM_MID, 0, -30);
