@@ -5,4 +5,5 @@
 # Date Updated: 2025-12-19
 
 idf_component_register(SRCS "main.c"
+                            "splash_screen.c"
                        INCLUDE_DIRS ".")
