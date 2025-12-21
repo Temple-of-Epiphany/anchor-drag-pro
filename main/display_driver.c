@@ -107,15 +107,27 @@ esp_err_t display_init(void) {
     // Test pattern: Fill frame buffer with color to verify display works
     void *fb = NULL;
     ret = esp_lcd_rgb_panel_get_frame_buffer(display_panel, 1, &fb);
+    ESP_LOGI(TAG, "Frame buffer get result: %s, pointer: %p", esp_err_to_name(ret), fb);
+
     if (ret == ESP_OK && fb != NULL) {
-        ESP_LOGI(TAG, "Testing display with blue screen...");
+        ESP_LOGI(TAG, "Filling frame buffer with test pattern (blue)...");
         uint16_t *fb16 = (uint16_t *)fb;
         uint32_t pixel_count = LCD_WIDTH * LCD_HEIGHT;
+
         // Fill with blue color (RGB565: 0x001F)
         for (uint32_t i = 0; i < pixel_count; i++) {
             fb16[i] = 0x001F;  // Blue
         }
-        ESP_LOGI(TAG, "Display test pattern drawn - should see blue screen");
+
+        ESP_LOGI(TAG, "Frame buffer filled with %lu pixels", pixel_count);
+        ESP_LOGI(TAG, "First pixel value: 0x%04X (should be 0x001F)", fb16[0]);
+        ESP_LOGI(TAG, "Last pixel value: 0x%04X (should be 0x001F)", fb16[pixel_count - 1]);
+
+        // Give display time to show the pattern
+        vTaskDelay(pdMS_TO_TICKS(5000));  // Wait 5 seconds
+        ESP_LOGI(TAG, "Test pattern should be visible now as BLUE screen");
+    } else {
+        ESP_LOGE(TAG, "Failed to get frame buffer for test pattern");
     }
 
     return ESP_OK;
