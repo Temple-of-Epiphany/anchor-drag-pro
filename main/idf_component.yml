@@ -1,0 +1,9 @@
+## IDF Component Manager Manifest File
+## Author: Colin Bitterfield
+## Email: colin@bitterfield.com
+## Date Created: 2025-12-20
+
+dependencies:
+  lvgl/lvgl:
+    version: "^9.2.0"
+    public: true
