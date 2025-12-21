@@ -23,6 +23,8 @@
 #include "board_config.h"
 #include "splash_screen.h"
 #include "ui_version.h"
+#include "display_driver.h"
+#include "lvgl_init.h"
 
 static const char *TAG = "anchor-drag-pro";
 
@@ -285,6 +287,22 @@ void app_main(void)
     ESP_LOGI(TAG, "Firmware Version: %s", FW_VERSION_STRING);
     ESP_LOGI(TAG, "UI Version: %s", UI_VERSION_STRING);
     ESP_LOGI(TAG, "Board: %s", BOARD_NAME);
+
+    // Initialize RGB LCD display
+    ret = display_init();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Display initialization failed: %s", esp_err_to_name(ret));
+        return;
+    }
+
+    // Initialize LVGL graphics library
+    ret = lvgl_init();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "LVGL initialization failed: %s", esp_err_to_name(ret));
+        return;
+    }
+
+    ESP_LOGI(TAG, "Display and LVGL initialized successfully");
 
     // Run splash screen with self-test (30 second timeout)
     ret = splash_screen_run(30);

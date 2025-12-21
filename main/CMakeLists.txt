@@ -6,4 +6,6 @@
 
 idf_component_register(SRCS "main.c"
                             "splash_screen.c"
+                            "display_driver.c"
+                            "lvgl_init.c"
                        INCLUDE_DIRS ".")
