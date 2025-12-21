@@ -14,6 +14,7 @@
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "esp_lcd_panel_ops.h"
+#include "esp_lcd_panel_rgb.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/semphr.h"
@@ -41,19 +42,11 @@ static void lvgl_tick_timer_cb(void *arg) {
 
 /**
  * LVGL flush callback - called when LVGL needs to update display
+ * For RGB panels, this is a no-op as LVGL draws directly to frame buffer
  */
 static void lvgl_flush_cb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map) {
-    esp_lcd_panel_handle_t panel = display_get_panel();
-
-    int offsetx1 = area->x1;
-    int offsety1 = area->y1;
-    int offsetx2 = area->x2;
-    int offsety2 = area->y2;
-
-    // Send framebuffer to display
-    esp_lcd_panel_draw_bitmap(panel, offsetx1, offsety1, offsetx2 + 1, offsety2 + 1, px_map);
-
-    // Tell LVGL we're done flushing
+    // For RGB panels using direct mode, just notify LVGL we're done
+    // The data is already in the frame buffer
     lv_display_flush_ready(disp);
 }
 
@@ -108,24 +101,32 @@ esp_err_t lvgl_init(void) {
         return ESP_FAIL;
     }
 
-    // Allocate display buffers in PSRAM (2 buffers for smoother rendering)
-    size_t buffer_size = LCD_WIDTH * 40 * sizeof(lv_color_t);  // 40 lines buffer
-    void *buf1 = heap_caps_malloc(buffer_size, MALLOC_CAP_SPIRAM);
-    void *buf2 = heap_caps_malloc(buffer_size, MALLOC_CAP_SPIRAM);
+    // Get RGB panel frame buffer (allocated in PSRAM by RGB driver)
+    esp_lcd_panel_handle_t panel = display_get_panel();
+    void *buf1 = NULL;
+    void *buf2 = NULL;
 
-    if (buf1 == NULL || buf2 == NULL) {
-        ESP_LOGE(TAG, "Failed to allocate LVGL display buffers");
-        if (buf1) free(buf1);
-        if (buf2) free(buf2);
+    // Try to get frame buffers from RGB panel
+    ESP_ERROR_CHECK(esp_lcd_rgb_panel_get_frame_buffer(panel, 2, &buf1, &buf2));
+
+    if (buf1 == NULL) {
+        ESP_LOGE(TAG, "Failed to get RGB panel frame buffer");
         return ESP_ERR_NO_MEM;
     }
 
-    ESP_LOGI(TAG, "Display buffers allocated: 2x %zu bytes in PSRAM", buffer_size);
+    size_t buffer_size = LCD_WIDTH * LCD_HEIGHT * sizeof(lv_color_t);
+    ESP_LOGI(TAG, "Using RGB panel frame buffers: %zu bytes each in PSRAM", buffer_size);
 
-    // Set display buffers
-    lv_display_set_buffers(lvgl_display, buf1, buf2, buffer_size, LV_DISPLAY_RENDER_MODE_PARTIAL);
+    // Set display buffers to use RGB panel's frame buffers directly
+    if (buf2 != NULL) {
+        lv_display_set_buffers(lvgl_display, buf1, buf2, buffer_size, LV_DISPLAY_RENDER_MODE_DIRECT);
+        ESP_LOGI(TAG, "LVGL configured with double buffering (direct mode)");
+    } else {
+        lv_display_set_buffers(lvgl_display, buf1, NULL, buffer_size, LV_DISPLAY_RENDER_MODE_DIRECT);
+        ESP_LOGI(TAG, "LVGL configured with single buffering (direct mode)");
+    }
 
-    // Set flush callback
+    // Set flush callback (no-op for RGB panels in direct mode)
     lv_display_set_flush_cb(lvgl_display, lvgl_flush_cb);
 
     ESP_LOGI(TAG, "Display driver registered with LVGL");
