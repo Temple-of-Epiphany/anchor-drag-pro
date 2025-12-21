@@ -104,27 +104,20 @@ esp_err_t lvgl_init(void) {
     // Get RGB panel frame buffer (allocated in PSRAM by RGB driver)
     esp_lcd_panel_handle_t panel = display_get_panel();
     void *buf1 = NULL;
-    void *buf2 = NULL;
 
-    // Try to get frame buffers from RGB panel
-    ESP_ERROR_CHECK(esp_lcd_rgb_panel_get_frame_buffer(panel, 2, &buf1, &buf2));
-
-    if (buf1 == NULL) {
-        ESP_LOGE(TAG, "Failed to get RGB panel frame buffer");
+    // Get the single frame buffer from RGB panel
+    ret = esp_lcd_rgb_panel_get_frame_buffer(panel, 1, &buf1);
+    if (ret != ESP_OK || buf1 == NULL) {
+        ESP_LOGE(TAG, "Failed to get RGB panel frame buffer: %s", esp_err_to_name(ret));
         return ESP_ERR_NO_MEM;
     }
 
     size_t buffer_size = LCD_WIDTH * LCD_HEIGHT * sizeof(lv_color_t);
-    ESP_LOGI(TAG, "Using RGB panel frame buffers: %zu bytes each in PSRAM", buffer_size);
+    ESP_LOGI(TAG, "Using RGB panel frame buffer: %zu bytes in PSRAM", buffer_size);
 
-    // Set display buffers to use RGB panel's frame buffers directly
-    if (buf2 != NULL) {
-        lv_display_set_buffers(lvgl_display, buf1, buf2, buffer_size, LV_DISPLAY_RENDER_MODE_DIRECT);
-        ESP_LOGI(TAG, "LVGL configured with double buffering (direct mode)");
-    } else {
-        lv_display_set_buffers(lvgl_display, buf1, NULL, buffer_size, LV_DISPLAY_RENDER_MODE_DIRECT);
-        ESP_LOGI(TAG, "LVGL configured with single buffering (direct mode)");
-    }
+    // Set display buffer to use RGB panel's frame buffer directly (single buffer)
+    lv_display_set_buffers(lvgl_display, buf1, NULL, buffer_size, LV_DISPLAY_RENDER_MODE_DIRECT);
+    ESP_LOGI(TAG, "LVGL configured with single buffering (direct mode)");
 
     // Set flush callback (no-op for RGB panels in direct mode)
     lv_display_set_flush_cb(lvgl_display, lvgl_flush_cb);
