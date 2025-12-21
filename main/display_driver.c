@@ -94,13 +94,6 @@ esp_err_t display_init(void) {
         return ret;
     }
 
-    // Reset display (required for proper initialization)
-    ret = esp_lcd_panel_reset(display_panel);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to reset panel: %s", esp_err_to_name(ret));
-        return ret;
-    }
-
     // Initialize display
     ret = esp_lcd_panel_init(display_panel);
     if (ret != ESP_OK) {
@@ -109,22 +102,7 @@ esp_err_t display_init(void) {
     }
 
     ESP_LOGI(TAG, "RGB LCD initialized successfully");
-
-    // Turn on display (panel invert off means normal display)
-    ret = esp_lcd_panel_invert_color(display_panel, false);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to set color inversion: %s", esp_err_to_name(ret));
-        return ret;
-    }
-
-    // Turn on display
-    ret = esp_lcd_panel_disp_on_off(display_panel, true);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to turn on display: %s", esp_err_to_name(ret));
-        return ret;
-    }
-
-    ESP_LOGI(TAG, "Display is ON");
+    ESP_LOGI(TAG, "Note: RGB panels are always on. Use CH422G EXIO2 to control backlight.");
 
     return ESP_OK;
 }
