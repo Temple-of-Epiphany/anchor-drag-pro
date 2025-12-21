@@ -26,8 +26,7 @@
 
 static const char *TAG = "splash_screen";
 
-// Animation characters for loading
-static const char animation_chars[] = {'●', '○', '○', '○', '○'};
+// Animation frame counter for loading display
 static uint8_t animation_frame = 0;
 
 /**
