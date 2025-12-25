@@ -14,6 +14,9 @@
  */
 
 #include <stdio.h>
+#include <string.h>
+#include <sys/time.h>
+#include <time.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
@@ -22,11 +25,121 @@
 #include "esp_flash.h"
 #include "board_config.h"
 #include "splash_screen.h"
+#include "splash_logo.h"
+#include "smpte_test_screen.h"
+#include "start_screen.h"
+#include "simple_test_screen.h"
+#include "display_test.h"
 #include "ui_version.h"
 #include "display_driver.h"
+#include "touch_driver.h"
 #include "lvgl_init.h"
+#include "rtc_pcf85063a.h"
+#include "tv_test_pattern.h"
+#include "ui_footer.h"
+#include "screens.h"
+
+// External font declarations
+LV_FONT_DECLARE(orbitron_variablefont_wght_24);
 
 static const char *TAG = "anchor-drag-pro";
+
+// Global footer reference for touch handler
+static lv_obj_t *g_footer = NULL;
+
+// Global screen references for navigation
+static lv_obj_t *g_screens[PAGE_COUNT] = {NULL};
+static lv_obj_t *g_footers[PAGE_COUNT] = {NULL};
+static ui_page_t g_current_page = PAGE_START;
+
+// Touch tracking for manual swipe detection
+static lv_point_t touch_start = {0, 0};
+static bool touch_started = false;
+
+// Forward declaration
+static void footer_page_callback(ui_page_t page);
+
+/**
+ * Global gesture callback - handles swipe up (show footer) and swipe left/right (navigate)
+ * Uses manual touch tracking for reliable swipe detection
+ */
+static void global_gesture_cb(lv_event_t *e) {
+    lv_event_code_t code = lv_event_get_code(e);
+
+    if (code == LV_EVENT_PRESSED) {
+        // Touch started - record starting position
+        lv_indev_t *indev = lv_indev_get_act();
+        lv_indev_get_point(indev, &touch_start);
+        touch_started = true;
+        ESP_LOGI(TAG, "Touch started at X=%d, Y=%d", touch_start.x, touch_start.y);
+
+    } else if (code == LV_EVENT_PRESSING) {
+        // Touch moving - check for swipe gestures
+        if (touch_started) {
+            lv_point_t current;
+            lv_indev_t *indev = lv_indev_get_act();
+            lv_indev_get_point(indev, &current);
+
+            int16_t delta_x = current.x - touch_start.x;  // Positive = rightward movement
+            int16_t delta_y = touch_start.y - current.y;  // Positive = upward movement
+
+            // Swipe up - show footer
+            if (delta_y > 50 && abs(delta_x) < 30) {
+                ESP_LOGI(TAG, "Swipe up detected! Delta Y=%d - showing footer", delta_y);
+                if (g_footer != NULL) {
+                    ui_footer_show(g_footer);
+                }
+                touch_started = false;  // Prevent multiple triggers
+            }
+            // Swipe left - next screen
+            else if (delta_x < -80 && abs(delta_y) < 40) {
+                ESP_LOGI(TAG, "Swipe left detected! Delta X=%d - next screen", delta_x);
+                ui_page_t next_page = (g_current_page + 1) % PAGE_COUNT;
+                footer_page_callback(next_page);
+                touch_started = false;
+            }
+            // Swipe right - previous screen
+            else if (delta_x > 80 && abs(delta_y) < 40) {
+                ESP_LOGI(TAG, "Swipe right detected! Delta X=%d - previous screen", delta_x);
+                ui_page_t prev_page = (g_current_page + PAGE_COUNT - 1) % PAGE_COUNT;
+                footer_page_callback(prev_page);
+                touch_started = false;
+            }
+        }
+
+    } else if (code == LV_EVENT_RELEASED || code == LV_EVENT_PRESS_LOST) {
+        // Touch ended
+        touch_started = false;
+    }
+}
+
+/**
+ * Bottom touch area callback - wrapper for global gestures on swipe area
+ */
+static void bottom_touch_cb(lv_event_t *e) {
+    global_gesture_cb(e);
+}
+
+/**
+ * Footer button callback - handles page navigation
+ */
+static void footer_page_callback(ui_page_t page) {
+    const char *page_names[] = {"START", "INFO", "PGN", "CONFIG", "UPDATE", "TOOLS"};
+
+    // Check if screen exists
+    if (g_screens[page] == NULL) {
+        ESP_LOGE(TAG, "Screen %s not created!", page_names[page]);
+        return;
+    }
+
+    // Navigate to the selected screen
+    // Note: We're already in an LVGL context (button event callback), so no need to lock
+    lv_scr_load(g_screens[page]);
+    g_current_page = page;
+    g_footer = g_footers[page];  // Update global footer reference for swipe-up
+
+    ESP_LOGI(TAG, "Navigation: %s screen loaded", page_names[page]);
+}
 
 /**
  * Print banner separator line
@@ -153,6 +266,8 @@ static void display_libraries(void) {
     printf("11. Bluetooth LE     [DISABLED] - BLE connectivity\n");
     #endif
 
+    printf("12. RTC (PCF85063A)  [ENABLED]  - Real-time clock with battery backup\n");
+
     printf("\n");
 }
 
@@ -183,14 +298,12 @@ static void display_pin_allocation(void) {
     printf("  R3: GPIO%d, R4: GPIO%d, R5: GPIO%d, R6: GPIO%d, R7: GPIO%d\n",
            LCD_PIN_R3, LCD_PIN_R4, LCD_PIN_R5, LCD_PIN_R6, LCD_PIN_R7);
 
-    printf("\n=== I2C Buses ===\n");
-    printf("I2C0 (External):     SDA=GPIO%d, SCL=GPIO%d (%d kHz)\n",
-           I2C0_SDA_PIN, I2C0_SCL_PIN, I2C0_FREQ_HZ / 1000);
-    printf("  Devices:           GPS, Compass, Sensors\n");
-    printf("I2C1 (Internal):     SDA=GPIO%d, SCL=GPIO%d (%d kHz)\n",
-           I2C1_SDA_PIN, I2C1_SCL_PIN, I2C1_FREQ_HZ / 1000);
+    printf("\n=== I2C Bus ===\n");
+    printf("I2C0 (All Devices):  SDA=GPIO%d, SCL=GPIO%d (%d kHz)\n",
+           I2C_MASTER_SDA_IO, I2C_MASTER_SCL_IO, I2C_MASTER_FREQ_HZ / 1000);
     printf("  Devices:           Touch (GT911 @ 0x%02X), CH422G @ 0x%02X, RTC @ 0x%02X\n",
            I2C_ADDR_GT911, I2C_ADDR_CH422G, I2C_ADDR_PCF85063);
+    printf("                     GPS, Compass, External Sensors\n");
 
     printf("\n=== Touch Controller (GT911) ===\n");
     printf("I2C Address:         0x%02X\n", I2C_ADDR_GT911);
@@ -283,16 +396,120 @@ void app_main(void)
     // Clear screen
     printf("\033[2J\033[H");
 
-    ESP_LOGI(TAG, "=== Anchor Drag Pro Starting ===");
+    // Set reasonable log levels - reduce ESP-IDF component noise
+    esp_log_level_set("*", ESP_LOG_WARN);  // Default: only warnings and errors
+    esp_log_level_set("anchor-drag-pro", ESP_LOG_INFO);  // Our app: info level
+    esp_log_level_set("ui_footer", ESP_LOG_INFO);  // Footer: info level (reduced from DEBUG)
+    esp_log_level_set("screens", ESP_LOG_INFO);  // Screens: info level
+
+    ESP_LOGI(TAG, "");
+    ESP_LOGI(TAG, "================================================================================");
+    ESP_LOGI(TAG, "=== ANCHOR DRAG PRO - MARINE SAFETY SYSTEM ===");
+    ESP_LOGI(TAG, "================================================================================");
     ESP_LOGI(TAG, "Firmware Version: %s", FW_VERSION_STRING);
     ESP_LOGI(TAG, "UI Version: %s", UI_VERSION_STRING);
     ESP_LOGI(TAG, "Board: %s", BOARD_NAME);
+    ESP_LOGI(TAG, "================================================================================");
+    ESP_LOGI(TAG, "");
+
+    // Initialize RTC (Real-Time Clock)
+    ESP_LOGI(TAG, "Initializing RTC (PCF85063A)...");
+    PCF85063A_Init();
+
+    // Read current time from RTC
+    datetime_t rtc_time;
+    PCF85063A_Read_now(&rtc_time);
+
+    // Check if RTC has valid time (year should be reasonable)
+    bool rtc_valid = (rtc_time.year >= 2025 && rtc_time.year <= 2050 &&
+                     rtc_time.month >= 1 && rtc_time.month <= 12 &&
+                     rtc_time.day >= 1 && rtc_time.day <= 31 &&
+                     rtc_time.hour <= 23 && rtc_time.min <= 59 && rtc_time.sec <= 59);
+
+    if (!rtc_valid) {
+        ESP_LOGW(TAG, "RTC time invalid (year=%d), setting to build time", rtc_time.year);
+
+        // Parse build date and time from __DATE__ and __TIME__ macros
+        // __DATE__ format: "Dec 23 2025"
+        // __TIME__ format: "20:30:45"
+        const char *month_names[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                                     "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+        char month_str[4];
+        int day, year, hour, min, sec;
+
+        sscanf(__DATE__, "%s %d %d", month_str, &day, &year);
+        sscanf(__TIME__, "%d:%d:%d", &hour, &min, &sec);
+
+        // Convert month name to number
+        int month = 1;
+        for (int i = 0; i < 12; i++) {
+            if (strcmp(month_str, month_names[i]) == 0) {
+                month = i + 1;
+                break;
+            }
+        }
+
+        // Set RTC to build time
+        datetime_t build_time = {
+            .year = year,
+            .month = month,
+            .day = day,
+            .dotw = 0,  // Don't care about day of week
+            .hour = hour,
+            .min = min,
+            .sec = sec
+        };
+
+        PCF85063A_Set_All(build_time);
+        ESP_LOGI(TAG, "RTC set to build time: %04d-%02d-%02d %02d:%02d:%02d",
+                 year, month, day, hour, min, sec);
+
+        // Re-read to confirm
+        PCF85063A_Read_now(&rtc_time);
+    } else {
+        ESP_LOGI(TAG, "RTC time is valid");
+    }
+
+    // Convert to system time and set it
+    struct tm timeinfo = {
+        .tm_year = rtc_time.year - 1900,  // tm_year is years since 1900
+        .tm_mon = rtc_time.month - 1,      // tm_mon is 0-11
+        .tm_mday = rtc_time.day,
+        .tm_hour = rtc_time.hour,
+        .tm_min = rtc_time.min,
+        .tm_sec = rtc_time.sec,
+        .tm_wday = rtc_time.dotw,          // Day of week
+        .tm_isdst = -1                     // Auto-determine DST
+    };
+
+    time_t epoch_time = mktime(&timeinfo);
+    struct timeval tv = {
+        .tv_sec = epoch_time,
+        .tv_usec = 0
+    };
+
+    settimeofday(&tv, NULL);
+
+    // Log the RTC time
+    char rtc_str[64];
+    datetime_to_str(rtc_str, rtc_time);
+    ESP_LOGI(TAG, "RTC Time: %s", rtc_str);
+    ESP_LOGI(TAG, "System time synchronized with RTC");
+    ESP_LOGI(TAG, "Timestamps will now show real date/time instead of milliseconds");
 
     // Initialize RGB LCD display
     ret = display_init();
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "Display initialization failed: %s", esp_err_to_name(ret));
         return;
+    }
+
+    // Initialize GT911 touch controller
+    ret = touch_init();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Touch initialization failed: %s", esp_err_to_name(ret));
+        ESP_LOGW(TAG, "Continuing without touch input...");
+        // Continue anyway - touch is optional for testing
     }
 
     // Initialize LVGL graphics library
@@ -302,12 +519,173 @@ void app_main(void)
         return;
     }
 
-    ESP_LOGI(TAG, "Display and LVGL initialized successfully");
-
-    // Run splash screen with self-test (30 second timeout)
-    ret = splash_screen_run(30);
+    // Register VSYNC callback for frame synchronization (Mode 3)
+    ret = display_register_vsync_callback();
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Splash screen failed: %s", esp_err_to_name(ret));
+        ESP_LOGE(TAG, "VSYNC callback registration failed: %s", esp_err_to_name(ret));
+        return;
+    }
+
+    ESP_LOGI(TAG, "Display and LVGL initialized successfully (Mode 3: Direct-Mode)");
+
+    // Create TV test pattern (custom image)
+    ESP_LOGI(TAG, "Creating TV test pattern from image...");
+    if (lvgl_lock(1000)) {
+        lv_obj_t *test_screen = lv_obj_create(NULL);
+        lv_obj_set_style_bg_color(test_screen, lv_color_black(), 0);
+
+        // Create image object and load test pattern (800x480)
+        lv_obj_t *img = lv_img_create(test_screen);
+        lv_img_set_src(img, &tv_test_pattern);
+        lv_obj_align(img, LV_ALIGN_CENTER, 0, 0);
+
+        lv_scr_load(test_screen);
+        lvgl_unlock();
+        ESP_LOGI(TAG, "TV test pattern displayed (800x480 pixels)");
+    } else {
+        ESP_LOGE(TAG, "Failed to lock LVGL for test pattern");
+    }
+
+    // Show test pattern for 5 seconds
+    ESP_LOGI(TAG, "Displaying test pattern for 5 seconds...");
+    vTaskDelay(pdMS_TO_TICKS(5000));
+    ESP_LOGI(TAG, "Test pattern timeout complete");
+
+    // Create splash screen with logo and scrollable bottom menu
+    ESP_LOGI(TAG, "Creating splash screen with OK button and footer...");
+    if (lvgl_lock(2000)) {
+        lv_obj_t *splash_screen = lv_obj_create(NULL);
+        lv_obj_set_style_bg_color(splash_screen, lv_color_hex(0x001F3F), 0);  // Dark blue
+
+        // Create "Anchor Drag Alarm" text at top of screen in Orbitron 24pt
+        lv_obj_t *title_label = lv_label_create(splash_screen);
+        lv_label_set_text(title_label, "Anchor Drag Alarm");
+        lv_obj_set_style_text_font(title_label, &orbitron_variablefont_wght_24, 0);
+        lv_obj_set_style_text_color(title_label, lv_color_hex(0x39CCCC), 0);  // Teal color
+        lv_obj_align(title_label, LV_ALIGN_TOP_MID, 0, 20);  // Top of screen with 20px margin
+
+        // Create splash logo image (256x256) - positioned higher
+        lv_obj_t *logo_img = lv_img_create(splash_screen);
+        lv_img_set_src(logo_img, &splash_logo);
+        lv_obj_align(logo_img, LV_ALIGN_CENTER, 0, -60);  // 60px above center
+
+        // Create self-test progress bar below logo
+        lv_obj_t *progress_bar = lv_bar_create(splash_screen);
+        lv_obj_set_size(progress_bar, 400, 20);  // 400px wide, 20px tall
+        lv_obj_align_to(progress_bar, logo_img, LV_ALIGN_OUT_BOTTOM_MID, 0, 30);  // Below logo with 30px gap
+
+        // Style the progress bar - teal theme
+        lv_obj_set_style_bg_color(progress_bar, lv_color_hex(0x003366), 0);  // Dark blue background
+        lv_obj_set_style_bg_opa(progress_bar, LV_OPA_COVER, 0);
+        lv_obj_set_style_bg_color(progress_bar, lv_color_hex(0x39CCCC), LV_PART_INDICATOR);  // Teal indicator
+        lv_obj_set_style_bg_opa(progress_bar, LV_OPA_COVER, LV_PART_INDICATOR);
+        lv_obj_set_style_radius(progress_bar, 10, 0);  // Rounded corners
+        lv_obj_set_style_radius(progress_bar, 10, LV_PART_INDICATOR);
+
+        // Set initial progress to 0%
+        lv_bar_set_value(progress_bar, 0, LV_ANIM_OFF);
+
+        // Add "Self Test" label above progress bar
+        lv_obj_t *test_label = lv_label_create(splash_screen);
+        lv_label_set_text(test_label, "Self Test");
+        lv_obj_set_style_text_color(test_label, lv_color_white(), 0);
+        lv_obj_align_to(test_label, progress_bar, LV_ALIGN_OUT_TOP_MID, 0, -8);  // Above progress bar
+
+        // Add version number at bottom right
+        lv_obj_t *version_label = lv_label_create(splash_screen);
+        lv_label_set_text_fmt(version_label, "v%s", UI_VERSION_STRING);
+        lv_obj_set_style_text_color(version_label, lv_color_hex(0x666666), 0);  // Gray color
+        lv_obj_align(version_label, LV_ALIGN_BOTTOM_RIGHT, -10, -70);  // Bottom right, above footer area
+
+        // Create scrollable footer navigation bar at bottom
+        g_footer = ui_footer_create(splash_screen, PAGE_START, footer_page_callback);
+        if (g_footer == NULL) {
+            ESP_LOGE(TAG, "Failed to create footer");
+        } else {
+            ESP_LOGI(TAG, "Footer created successfully (scrollable)");
+        }
+
+        // Create invisible gesture-sensitive area at bottom for swipe-up
+        // Positioned ABOVE the footer so it doesn't block button clicks
+        lv_obj_t *bottom_handle = lv_obj_create(splash_screen);
+        lv_obj_set_size(bottom_handle, 800, 40);  // Full width, 40px tall
+        lv_obj_align(bottom_handle, LV_ALIGN_BOTTOM_MID, 0, -60);  // Above footer (60px offset)
+        lv_obj_set_style_bg_opa(bottom_handle, LV_OPA_TRANSP, 0);  // Completely transparent/invisible
+        lv_obj_set_style_border_width(bottom_handle, 0, 0);
+        lv_obj_set_style_radius(bottom_handle, 0, 0);  // No rounding
+
+        // Register for all touch events to manually track swipe
+        lv_obj_add_event_cb(bottom_handle, bottom_touch_cb, LV_EVENT_PRESSED, NULL);
+        lv_obj_add_event_cb(bottom_handle, bottom_touch_cb, LV_EVENT_PRESSING, NULL);
+        lv_obj_add_event_cb(bottom_handle, bottom_touch_cb, LV_EVENT_RELEASED, NULL);
+
+        // Load splash screen (this will automatically unload the test pattern)
+        lv_scr_load(splash_screen);
+        lvgl_unlock();
+        ESP_LOGI(TAG, "Splash screen with progress bar displayed");
+
+        // Perform self-test with progress animation
+        ESP_LOGI(TAG, "Starting self-test...");
+        for (int i = 0; i <= 100; i += 10) {
+            if (lvgl_lock(100)) {
+                lv_bar_set_value(progress_bar, i, LV_ANIM_ON);
+                lvgl_unlock();
+            }
+            vTaskDelay(pdMS_TO_TICKS(200));  // 200ms per step = 2 second total test
+            ESP_LOGI(TAG, "Self-test progress: %d%%", i);
+        }
+        ESP_LOGI(TAG, "Self-test complete!");
+
+        // Brief pause before continuing
+        vTaskDelay(pdMS_TO_TICKS(500));
+
+    } else {
+        ESP_LOGE(TAG, "Failed to lock LVGL for splash screen");
+    }
+
+    // Create all navigation screens
+    ESP_LOGI(TAG, "Creating navigation screens...");
+    if (lvgl_lock(2000)) {
+        g_screens[PAGE_START] = create_start_screen(footer_page_callback, &g_footers[PAGE_START]);
+        g_screens[PAGE_INFO] = create_info_screen(footer_page_callback, &g_footers[PAGE_INFO]);
+        g_screens[PAGE_PGN] = create_pgn_screen(footer_page_callback, &g_footers[PAGE_PGN]);
+        g_screens[PAGE_CONFIG] = create_config_screen(footer_page_callback, &g_footers[PAGE_CONFIG]);
+        g_screens[PAGE_UPDATE] = create_update_screen(footer_page_callback, &g_footers[PAGE_UPDATE]);
+        g_screens[PAGE_TOOLS] = create_tools_screen(footer_page_callback, &g_footers[PAGE_TOOLS]);
+
+        // Add gesture detection to all navigation screens
+        for (int i = 0; i < PAGE_COUNT; i++) {
+            // Create gesture area for main content (doesn't cover footer to avoid blocking buttons)
+            lv_obj_t *gesture_area = lv_obj_create(g_screens[i]);
+            lv_obj_set_size(gesture_area, 800, 420);  // Full width, but only upper area (not footer)
+            lv_obj_align(gesture_area, LV_ALIGN_TOP_MID, 0, 0);
+            lv_obj_set_style_bg_opa(gesture_area, LV_OPA_TRANSP, 0);  // Invisible
+            lv_obj_set_style_border_width(gesture_area, 0, 0);
+            lv_obj_set_style_radius(gesture_area, 0, 0);
+            lv_obj_move_background(gesture_area);  // Move to back so it doesn't block UI elements
+
+            // Register for all touch events for global gesture detection
+            lv_obj_add_event_cb(gesture_area, global_gesture_cb, LV_EVENT_PRESSED, NULL);
+            lv_obj_add_event_cb(gesture_area, global_gesture_cb, LV_EVENT_PRESSING, NULL);
+            lv_obj_add_event_cb(gesture_area, global_gesture_cb, LV_EVENT_RELEASED, NULL);
+        }
+
+        lvgl_unlock();
+        ESP_LOGI(TAG, "All navigation screens created with swipe-up areas");
+
+        // Load the START screen
+        ESP_LOGI(TAG, "Loading START screen...");
+        if (lvgl_lock(100)) {
+            lv_scr_load(g_screens[PAGE_START]);
+            g_current_page = PAGE_START;
+            g_footer = g_footers[PAGE_START];  // Set footer reference for swipe-up
+            lvgl_unlock();
+            ESP_LOGI(TAG, "START screen loaded with swipe-up enabled");
+        } else {
+            ESP_LOGE(TAG, "Failed to lock LVGL for START screen");
+        }
+    } else {
+        ESP_LOGE(TAG, "Failed to lock LVGL for screen creation");
     }
 
     // Display detailed system information after splash
@@ -327,9 +705,7 @@ void app_main(void)
     ESP_LOGI(TAG, "Anchor Drag Pro v%s initialized successfully", FW_VERSION_STRING);
     ESP_LOGI(TAG, "UI Version: %s", UI_VERSION_STRING);
     ESP_LOGI(TAG, "Display: %dx%d RGB%d", LCD_WIDTH, LCD_HEIGHT, LCD_COLOR_BITS);
-
-    // TODO: Transition to START screen (Screen 1)
-    ESP_LOGI(TAG, "Next: Implement START screen for mode selection");
+    ESP_LOGI(TAG, "Navigation screens ready - use footer buttons to switch between pages");
 
     // Main application loop
     while (1) {

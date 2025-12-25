@@ -3,7 +3,7 @@
 # Author: Colin Bitterfield
 # Email: colin@bitterfield.com
 # Date Created: 2025-12-19
-# Date Updated: 2025-12-19
+# Date Updated: 2025-12-24
 
 # Target
 CONFIG_IDF_TARGET="esp32s3"
@@ -11,13 +11,39 @@ CONFIG_IDF_TARGET="esp32s3"
 # Flash size 16MB
 CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
 
-# PSRAM 8MB Octal
+# PSRAM 8MB Octal @ 120MHz (CRITICAL for RGB LCD performance)
 CONFIG_SPIRAM=y
 CONFIG_SPIRAM_MODE_OCT=y
-CONFIG_SPIRAM_SPEED_80M=y
+CONFIG_IDF_EXPERIMENTAL_FEATURES=y
+CONFIG_SPIRAM_SPEED_120M=y
+CONFIG_SPIRAM_FETCH_INSTRUCTIONS=y
+CONFIG_SPIRAM_RODATA=y
 
 # CPU frequency 240MHz
 CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
 
 # FreeRTOS tick rate
 CONFIG_FREERTOS_HZ=1000
+
+# Flash Configuration - QIO @ 120MHz (CRITICAL for RGB LCD performance)
+CONFIG_ESPTOOLPY_FLASHMODE_QIO=y
+CONFIG_ESPTOOLPY_FLASHFREQ_120M=y
+
+# ESP32-S3 Data Cache - 64B cache line (CRITICAL for RGB LCD DMA)
+CONFIG_ESP32S3_DATA_CACHE_LINE_64B=y
+
+# Compiler Optimization - Performance mode (CRITICAL for RGB LCD refresh rate)
+CONFIG_COMPILER_OPTIMIZATION_PERF=y
+
+# LVGL Performance Settings (CRITICAL for tear-free rendering)
+CONFIG_LV_MEM_CUSTOM=y
+CONFIG_LV_MEMCPY_MEMSET_STD=y
+CONFIG_LV_ATTRIBUTE_FAST_MEM_USE_IRAM=y
+
+# Custom Partition Table (3MB app partition for large firmware)
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+CONFIG_PARTITION_TABLE_FILENAME="partitions.csv"
+
+# Main task stack size (16KB needed for UI initialization)
+CONFIG_MAIN_TASK_STACK_SIZE=16384

@@ -55,4 +55,14 @@ int display_get_width(void);
  */
 int display_get_height(void);
 
+/**
+ * Register VSYNC callback for LVGL synchronization
+ *
+ * This must be called after display_init() to enable proper
+ * frame synchronization with LVGL in direct mode.
+ *
+ * @return ESP_OK on success, error code otherwise
+ */
+esp_err_t display_register_vsync_callback(void);
+
 #endif // DISPLAY_DRIVER_H

@@ -10,6 +10,7 @@
 
 #include "display_driver.h"
 #include "board_config.h"
+#include "lvgl_init.h"
 #include "esp_lcd_panel_rgb.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
@@ -43,16 +44,12 @@ esp_err_t display_init(void) {
             .vsync_back_porch = LCD_VBP,
             .vsync_front_porch = LCD_VFP,
             .flags = {
-                .hsync_idle_low = 0,
-                .vsync_idle_low = 0,
-                .de_idle_high = 0,
-                .pclk_active_neg = 0,
-                .pclk_idle_high = 0,
+                .pclk_active_neg = 1,  // Active low pixel clock (Waveshare spec)
             },
         },
         .data_width = LCD_RGB_DATA_WIDTH,
         .bits_per_pixel = LCD_COLOR_BITS,
-        .num_fbs = 1,  // Single frame buffer
+        .num_fbs = 2,  // Double buffering to prevent tearing (per Waveshare)
         .bounce_buffer_size_px = LCD_BOUNCE_BUFFER_SIZE,
         .sram_trans_align = 4,
         .psram_trans_align = 64,
@@ -104,32 +101,6 @@ esp_err_t display_init(void) {
     ESP_LOGI(TAG, "RGB LCD initialized successfully");
     ESP_LOGI(TAG, "Note: RGB panels are always on. Use CH422G EXIO2 to control backlight.");
 
-    // Test pattern: Fill frame buffer with color to verify display works
-    void *fb = NULL;
-    ret = esp_lcd_rgb_panel_get_frame_buffer(display_panel, 1, &fb);
-    ESP_LOGI(TAG, "Frame buffer get result: %s, pointer: %p", esp_err_to_name(ret), fb);
-
-    if (ret == ESP_OK && fb != NULL) {
-        ESP_LOGI(TAG, "Filling frame buffer with test pattern (blue)...");
-        uint16_t *fb16 = (uint16_t *)fb;
-        uint32_t pixel_count = LCD_WIDTH * LCD_HEIGHT;
-
-        // Fill with blue color (RGB565: 0x001F)
-        for (uint32_t i = 0; i < pixel_count; i++) {
-            fb16[i] = 0x001F;  // Blue
-        }
-
-        ESP_LOGI(TAG, "Frame buffer filled with %lu pixels", pixel_count);
-        ESP_LOGI(TAG, "First pixel value: 0x%04X (should be 0x001F)", fb16[0]);
-        ESP_LOGI(TAG, "Last pixel value: 0x%04X (should be 0x001F)", fb16[pixel_count - 1]);
-
-        // Give display time to show the pattern
-        vTaskDelay(pdMS_TO_TICKS(5000));  // Wait 5 seconds
-        ESP_LOGI(TAG, "Test pattern should be visible now as BLUE screen");
-    } else {
-        ESP_LOGE(TAG, "Failed to get frame buffer for test pattern");
-    }
-
     return ESP_OK;
 }
 
@@ -152,4 +123,45 @@ int display_get_width(void) {
  */
 int display_get_height(void) {
     return LCD_HEIGHT;
+}
+
+/**
+ * VSYNC event callback - called when RGB frame buffer transmission completes
+ */
+static IRAM_ATTR bool on_vsync_event(esp_lcd_panel_handle_t panel,
+                                      const esp_lcd_rgb_panel_event_data_t *edata,
+                                      void *user_ctx) {
+    static uint32_t vsync_count = 0;
+    vsync_count++;
+
+    // Can't log from ISR, but we can count
+    // (Use a debugger or check the count externally if needed)
+
+    return lvgl_notify_vsync_isr();
+}
+
+/**
+ * Register VSYNC callback for LVGL synchronization
+ */
+esp_err_t display_register_vsync_callback(void) {
+    if (display_panel == NULL) {
+        ESP_LOGE(TAG, "Display panel not initialized");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    // Register bounce buffer callback (required when using bounce buffer)
+    // With bounce buffer: use on_bounce_frame_finish
+    // Without bounce buffer: use on_vsync
+    esp_lcd_rgb_panel_event_callbacks_t cbs = {
+        .on_bounce_frame_finish = on_vsync_event,  // Called when bounce buffer transfer completes
+    };
+
+    esp_err_t ret = esp_lcd_rgb_panel_register_event_callbacks(display_panel, &cbs, NULL);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to register bounce buffer callback: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    ESP_LOGI(TAG, "Bounce buffer callback registered for Mode 3 synchronization");
+    return ESP_OK;
 }

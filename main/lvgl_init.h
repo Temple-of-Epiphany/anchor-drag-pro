@@ -1,13 +1,16 @@
 /**
  * LVGL Initialization and Integration
+ * Waveshare Mode 3: Direct-Mode with hardware-managed synchronization
  *
  * Author: Colin Bitterfield
  * Email: colin@bitterfield.com
  * Date Created: 2025-12-20
- * Date Updated: 2025-12-20
- * Version: 0.1.1
+ * Date Updated: 2025-12-24
+ * Version: 0.2.1
  *
  * Initializes LVGL graphics library and integrates with RGB LCD display driver.
+ * Uses full-screen frame buffers from RGB panel driver with direct-mode rendering.
+ * Hardware double-buffering and bounce buffer provide automatic synchronization.
  */
 
 #ifndef LVGL_INIT_H
@@ -37,7 +40,7 @@ esp_err_t lvgl_init(void);
  *
  * @return Pointer to LVGL display object
  */
-lv_display_t* lvgl_get_display(void);
+lv_disp_t* lvgl_get_display(void);
 
 /**
  * Lock LVGL mutex (for thread-safe LVGL API calls)
@@ -56,5 +59,15 @@ bool lvgl_lock(uint32_t timeout_ms);
  * Call this after LVGL API calls from non-LVGL threads.
  */
 void lvgl_unlock(void);
+
+/**
+ * Notify LVGL task from VSYNC ISR
+ *
+ * Called from display driver when RGB frame transmission completes.
+ * This function is safe to call from ISR context.
+ *
+ * @return true if context switch is needed, false otherwise
+ */
+bool lvgl_notify_vsync_isr(void);
 
 #endif // LVGL_INIT_H

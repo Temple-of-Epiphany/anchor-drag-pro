@@ -17,6 +17,8 @@
 #include "ui_version.h"
 #include "board_config.h"
 #include "lvgl_init.h"
+#include "ui_header.h"
+#include "splash_logo.h"
 #include "esp_log.h"
 #include "esp_vfs_fat.h"
 #include "driver/sdmmc_host.h"
@@ -28,14 +30,13 @@
 
 static const char *TAG = "splash_screen";
 
-// Animation frame counter for loading display
-static uint8_t animation_frame = 0;
-
 // LVGL UI objects
 static lv_obj_t *splash_screen = NULL;
-static lv_obj_t *title_label = NULL;
+static lv_obj_t *status_header = NULL;
+static lv_obj_t *logo_img = NULL;
 static lv_obj_t *version_label = NULL;
-static lv_obj_t *loading_label = NULL;
+static lv_obj_t *progress_bar = NULL;
+static lv_obj_t *progress_label = NULL;
 static lv_obj_t *selftest_title_label = NULL;
 static lv_obj_t *tf_card_label = NULL;
 static lv_obj_t *n2k_label = NULL;
@@ -47,6 +48,8 @@ static lv_obj_t *status_label = NULL;
  * Create LVGL splash screen UI
  */
 static void create_splash_ui(void) {
+    ESP_LOGI(TAG, "Creating splash screen UI...");
+
     if (!lvgl_lock(1000)) {
         ESP_LOGE(TAG, "Failed to lock LVGL mutex");
         return;
@@ -54,30 +57,49 @@ static void create_splash_ui(void) {
 
     // Create splash screen
     splash_screen = lv_obj_create(NULL);
+    if (splash_screen == NULL) {
+        ESP_LOGE(TAG, "Failed to create splash screen object");
+        lvgl_unlock();
+        return;
+    }
+
+    // Set background color and make it opaque (critical for rendering)
     lv_obj_set_style_bg_color(splash_screen, lv_color_hex(0x001F3F), 0);  // Dark blue
+    lv_obj_set_style_bg_opa(splash_screen, LV_OPA_COVER, 0);  // Fully opaque
 
-    // Title label (using default font for now)
-    title_label = lv_label_create(splash_screen);
-    lv_label_set_text(title_label, "ANCHOR DRAG ALARM");
-    lv_obj_set_style_text_color(title_label, lv_color_white(), 0);
-    lv_obj_align(title_label, LV_ALIGN_TOP_MID, 0, 40);
+    // Status header (full-width bar at top with title)
+    status_header = ui_header_create(splash_screen);
+    ui_header_set_gps_status(status_header, false);
+    ui_header_set_compass_status(status_header, false);
 
-    // Version label
+    // Splash logo image (compiled C array) - centered below header
+    logo_img = lv_img_create(splash_screen);
+    lv_img_set_src(logo_img, &splash_logo);
+    lv_obj_align(logo_img, LV_ALIGN_CENTER, 0, -40);  // Centered, slight offset up
+
+    ESP_LOGI(TAG, "Splash logo loaded: %dx%d pixels", splash_logo.header.w, splash_logo.header.h);
+
+    // Version label - BELOW logo
     version_label = lv_label_create(splash_screen);
-    char version_text[128];
-    snprintf(version_text, sizeof(version_text),
-             "Version %s\nUI %s | FW %s",
-             UI_VERSION_STRING, UI_VERSION_STRING, FW_VERSION_STRING);
-    lv_label_set_text(version_label, version_text);
+    lv_label_set_text(version_label, "v" UI_VERSION_STRING);
     lv_obj_set_style_text_color(version_label, lv_color_hex(0xAAAAAA), 0);
-    lv_obj_set_style_text_align(version_label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_align(version_label, LV_ALIGN_TOP_MID, 0, 70);
+    lv_obj_set_style_text_font(version_label, &lv_font_montserrat_14, 0);
+    lv_obj_align_to(version_label, logo_img, LV_ALIGN_OUT_BOTTOM_MID, 0, 20);
 
-    // Loading label
-    loading_label = lv_label_create(splash_screen);
-    lv_label_set_text(loading_label, "Loading...");
-    lv_obj_set_style_text_color(loading_label, lv_color_hex(0xFFAA00), 0);
-    lv_obj_align(loading_label, LV_ALIGN_CENTER, 0, 0);
+    // Progress bar - BELOW version label
+    progress_bar = lv_bar_create(splash_screen);
+    lv_obj_set_size(progress_bar, 400, 20);
+    lv_obj_align_to(progress_bar, version_label, LV_ALIGN_OUT_BOTTOM_MID, 0, 20);
+    lv_obj_set_style_bg_color(progress_bar, lv_color_hex(0x333333), 0);  // Dark gray background
+    lv_obj_set_style_bg_opa(progress_bar, LV_OPA_COVER, 0);
+    lv_bar_set_range(progress_bar, 0, 100);
+    lv_bar_set_value(progress_bar, 0, LV_ANIM_OFF);
+
+    // Progress label - BELOW progress bar
+    progress_label = lv_label_create(splash_screen);
+    lv_label_set_text(progress_label, "Initializing...");
+    lv_obj_set_style_text_color(progress_label, lv_color_hex(0xFFAA00), 0);
+    lv_obj_align_to(progress_label, progress_bar, LV_ALIGN_OUT_BOTTOM_MID, 0, 10);
 
     // Self-test title (hidden initially)
     selftest_title_label = lv_label_create(splash_screen);
@@ -122,30 +144,39 @@ static void create_splash_ui(void) {
     lv_obj_align(status_label, LV_ALIGN_BOTTOM_MID, 0, -30);
     lv_obj_add_flag(status_label, LV_OBJ_FLAG_HIDDEN);
 
-    // Load splash screen
-    lv_screen_load(splash_screen);
+    // Load splash screen (LVGL 8.x)
+    lv_scr_load(splash_screen);
 
     lvgl_unlock();
+
+    // Force immediate redraw in direct mode (after unlocking)
+    vTaskDelay(pdMS_TO_TICKS(10));  // Small delay to allow screen load to complete
+
+    if (lvgl_lock(100)) {
+        lv_obj_invalidate(splash_screen);
+        lv_refr_now(lvgl_get_display());
+        lvgl_unlock();
+    }
+
+    ESP_LOGI(TAG, "Splash screen created and loaded successfully");
 }
 
 /**
- * Update loading animation
+ * Update progress bar
  */
-static void update_loading_animation(void) {
+static void update_progress(int percent, const char *message) {
     if (!lvgl_lock(100)) return;
 
-    char anim_text[64];
-    snprintf(anim_text, sizeof(anim_text), "Loading %s%s%s%s%s",
-             animation_frame == 0 ? "●" : "○",
-             animation_frame == 1 ? "●" : "○",
-             animation_frame == 2 ? "●" : "○",
-             animation_frame == 3 ? "●" : "○",
-             animation_frame == 4 ? "●" : "○");
-    lv_label_set_text(loading_label, anim_text);
+    if (progress_bar != NULL) {
+        lv_bar_set_value(progress_bar, percent, LV_ANIM_ON);
+    }
 
-    animation_frame = (animation_frame + 1) % 5;
+    if (progress_label != NULL && message != NULL) {
+        lv_label_set_text(progress_label, message);
+    }
 
     lvgl_unlock();
+    vTaskDelay(pdMS_TO_TICKS(50));  // Small delay for visual update
 }
 
 /**
@@ -154,9 +185,13 @@ static void update_loading_animation(void) {
 static void show_selftest_ui(void) {
     if (!lvgl_lock(100)) return;
 
-    lv_obj_add_flag(loading_label, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_remove_flag(selftest_title_label, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_remove_flag(tf_card_label, LV_OBJ_FLAG_HIDDEN);
+    // Hide progress label during self-test
+    if (progress_label != NULL) {
+        lv_obj_add_flag(progress_label, LV_OBJ_FLAG_HIDDEN);
+    }
+
+    lv_obj_clear_flag(selftest_title_label, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_clear_flag(tf_card_label, LV_OBJ_FLAG_HIDDEN);
 
     lvgl_unlock();
 }
@@ -179,7 +214,7 @@ static void update_test_label(lv_obj_t *label, const char *name, bool passed, bo
         lv_obj_set_style_text_color(label, lv_color_hex(0xFF0000), 0);  // Red
     }
     lv_label_set_text(label, text);
-    lv_obj_remove_flag(label, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_clear_flag(label, LV_OBJ_FLAG_HIDDEN);
 
     lvgl_unlock();
 }
@@ -331,11 +366,17 @@ esp_err_t run_self_test(selftest_results_t *results) {
     // Show self-test UI
     show_selftest_ui();
 
-    // Test 1: TF Card Detection
+    // Progress: 0% - Starting
+    update_progress(0, "Starting self-test...");
+    vTaskDelay(pdMS_TO_TICKS(500));
+
+    // Test 1: TF Card Detection (Progress: 0% -> 25%)
     printf("                         TF Card: ");
     fflush(stdout);
+    update_progress(10, "Checking TF Card...");
     results->tf_card_present = check_tf_card();
     printf("%s\n", results->tf_card_present ? "✓" : "✗");
+    update_progress(25, results->tf_card_present ? "TF Card: OK" : "TF Card: Not Found");
 
     // If TF card present, check for update.bin
     if (results->tf_card_present) {
@@ -345,47 +386,63 @@ esp_err_t run_self_test(selftest_results_t *results) {
         printf("%s\n", results->update_bin_found ? "FOUND" : "Not found");
     }
 
-    // Test 2: GPS Source Detection (Priority Order)
+    // Test 2: GPS Source Detection (Priority Order) (Progress: 25% -> 100%)
     // Priority 1: N2K Data
     printf("                         N2K Data: ");
     fflush(stdout);
+    update_progress(30, "Checking N2K GPS...");
     results->n2k_available = check_n2k_data(2000);
     printf("%s\n", results->n2k_available ? "✓" : "✗");
+    update_progress(50, results->n2k_available ? "N2K GPS: OK" : "N2K GPS: Not Found");
 
     if (results->n2k_available) {
         results->gps_ready = true;
         strncpy(results->gps_source, "NMEA 2000 (N2K)", sizeof(results->gps_source) - 1);
         printf("                         GPS Ready: ✓\n");
         ESP_LOGI(TAG, "GPS source: NMEA 2000 (highest priority)");
+        update_progress(100, "GPS Ready: N2K");
+        // Update header GPS status
+        ui_header_set_gps_status(status_header, true);
     } else {
         // Priority 2: NMEA 0183
         printf("                         NMEA 0183: ");
         fflush(stdout);
+        update_progress(60, "Checking NMEA 0183...");
         results->nmea0183_available = check_nmea0183_data(2000);
         printf("%s\n", results->nmea0183_available ? "✓" : "✗");
+        update_progress(70, results->nmea0183_available ? "NMEA 0183: OK" : "NMEA 0183: Not Found");
 
         if (results->nmea0183_available) {
             results->gps_ready = true;
             strncpy(results->gps_source, "NMEA 0183", sizeof(results->gps_source) - 1);
             printf("                         GPS Ready: ✓\n");
             ESP_LOGI(TAG, "GPS source: NMEA 0183 (secondary priority)");
+            update_progress(100, "GPS Ready: NMEA 0183");
+            // Update header GPS status
+            ui_header_set_gps_status(status_header, true);
         } else {
             // Priority 3: External GPS
             printf("                         External GPS: ");
             fflush(stdout);
+            update_progress(80, "Checking External GPS...");
             results->external_gps_available = check_external_gps(2000);
             printf("%s\n", results->external_gps_available ? "✓" : "✗");
+            update_progress(90, results->external_gps_available ? "External GPS: OK" : "External GPS: Not Found");
 
             if (results->external_gps_available) {
                 results->gps_ready = true;
                 strncpy(results->gps_source, "External GPS (I2C)", sizeof(results->gps_source) - 1);
                 printf("                         GPS Ready: ✓\n");
                 ESP_LOGI(TAG, "GPS source: External GPS (lowest priority)");
+                update_progress(100, "GPS Ready: External");
+                // Update header GPS status
+                ui_header_set_gps_status(status_header, true);
             } else {
                 results->gps_ready = false;
                 strncpy(results->gps_source, "None", sizeof(results->gps_source) - 1);
                 printf("                         GPS Ready: ✗ (No GPS found)\n");
                 ESP_LOGW(TAG, "No GPS source detected!");
+                update_progress(100, "Warning: No GPS Found");
             }
         }
     }
@@ -395,7 +452,7 @@ esp_err_t run_self_test(selftest_results_t *results) {
         char status_text[128];
         snprintf(status_text, sizeof(status_text), "GPS: %s", results->gps_source);
         lv_label_set_text(status_label, status_text);
-        lv_obj_remove_flag(status_label, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(status_label, LV_OBJ_FLAG_HIDDEN);
 
         if (results->gps_ready) {
             lv_obj_set_style_text_color(status_label, lv_color_hex(0x00FF00), 0);
@@ -434,33 +491,37 @@ void display_splash(const selftest_results_t *results) {
  * Run splash screen and self-test sequence
  */
 esp_err_t splash_screen_run(uint32_t timeout_sec) {
-    esp_err_t ret;
     selftest_results_t results;
+    memset(&results, 0, sizeof(results));  // Initialize to zero
 
     ESP_LOGI(TAG, "Splash screen starting (timeout: %lu seconds)", timeout_sec);
 
     // Create LVGL splash UI
     create_splash_ui();
 
+    // Give LVGL time to render initial screen
+    ESP_LOGI(TAG, "Waiting for screen to stabilize...");
+    vTaskDelay(pdMS_TO_TICKS(5000));  // Hold static screen for 5 seconds
+
     // Display initial splash to serial
     print_splash_banner();
 
-    // Show loading animation
-    for (int i = 0; i < 10; i++) {
-        update_loading_animation();
-        vTaskDelay(pdMS_TO_TICKS(200));
-    }
-    printf("\n\n");
+    // TEMPORARILY DISABLED: Show loading animation
+    // for (int i = 0; i < 10; i++) {
+    //     update_loading_animation();
+    //     vTaskDelay(pdMS_TO_TICKS(200));
+    // }
+    // printf("\n\n");
 
-    // Run self-test
-    ret = run_self_test(&results);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Self-test failed: %s", esp_err_to_name(ret));
-        return ret;
-    }
+    // TEMPORARILY DISABLED: Run self-test
+    // ret = run_self_test(&results);
+    // if (ret != ESP_OK) {
+    //     ESP_LOGE(TAG, "Self-test failed: %s", esp_err_to_name(ret));
+    //     return ret;
+    // }
 
-    // Display final results to serial
-    display_splash(&results);
+    // TEMPORARILY DISABLED: Display final results to serial
+    // display_splash(&results);
 
     // Wait a moment to show results
     vTaskDelay(pdMS_TO_TICKS(3000));
@@ -469,11 +530,40 @@ esp_err_t splash_screen_run(uint32_t timeout_sec) {
     if (results.update_bin_found) {
         ESP_LOGI(TAG, "Firmware update detected, transitioning to UPDATE screen");
         // TODO: Transition to UPDATE screen
+        // Clean up splash screen before returning
+        if (lvgl_lock(1000)) {
+            if (splash_screen != NULL) {
+                lv_obj_del(splash_screen);
+                splash_screen = NULL;
+                ESP_LOGI(TAG, "Splash screen deleted");
+            }
+            lvgl_unlock();
+        }
         return ESP_OK;
     }
 
-    // Otherwise, transition to START screen
-    ESP_LOGI(TAG, "Splash screen complete, transitioning to START screen...");
+    // Clean up splash screen before transitioning to next screen
+    ESP_LOGI(TAG, "Splash screen complete, cleaning up...");
+    if (lvgl_lock(1000)) {
+        if (splash_screen != NULL) {
+            lv_obj_del(splash_screen);  // LVGL 8.x API - deletes screen and all children
+            splash_screen = NULL;
+            status_header = NULL;
+            logo_img = NULL;
+            version_label = NULL;
+            progress_bar = NULL;
+            progress_label = NULL;
+            selftest_title_label = NULL;
+            tf_card_label = NULL;
+            n2k_label = NULL;
+            nmea_label = NULL;
+            gps_label = NULL;
+            status_label = NULL;
+            ESP_LOGI(TAG, "Splash screen deleted");
+        }
+        lvgl_unlock();
+    }
 
+    ESP_LOGI(TAG, "Ready for next screen");
     return ESP_OK;
 }

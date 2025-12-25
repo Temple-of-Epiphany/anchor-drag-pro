@@ -4,8 +4,8 @@
  * Author: Colin Bitterfield
  * Email: colin@bitterfield.com
  * Date Created: 2025-12-19
- * Date Updated: 2025-12-19
- * Version: 0.1.0
+ * Date Updated: 2025-12-23
+ * Version: 0.2.0
  *
  * Pin definitions and hardware configuration for Waveshare ESP32-S3-Touch-LCD-4.3B
  * Reference: docs/ESP32-S3-Touch-LCD-4.3B-BOX-KNOWLEDGE.md
@@ -18,9 +18,9 @@
 // Version Information
 // ============================================================================
 #define FW_VERSION_MAJOR    0
-#define FW_VERSION_MINOR    1
-#define FW_VERSION_PATCH    1
-#define FW_VERSION_STRING   "0.1.1"
+#define FW_VERSION_MINOR    2
+#define FW_VERSION_PATCH    0
+#define FW_VERSION_STRING   "0.2.0"
 #define FW_BUILD_DATE       __DATE__
 #define FW_BUILD_TIME       __TIME__
 
@@ -87,18 +87,22 @@
 // I2C Bus Configuration
 // ============================================================================
 
-// I2C0 - External devices (GPS, sensors, compass)
-#define I2C0_SDA_PIN        8
-#define I2C0_SCL_PIN        9
-#define I2C0_FREQ_HZ        400000  // 400 kHz
+// I2C0 - ALL I2C devices (per Waveshare hardware design)
+// Used for: CH422G I/O expander, GT911 touch, PCF85063A RTC, external sensors
+#define I2C_MASTER_NUM      0
+#define I2C_MASTER_SDA_IO   8       // GPIO8 - I2C0 SDA
+#define I2C_MASTER_SCL_IO   9       // GPIO9 - I2C0 SCL
+#define I2C_MASTER_FREQ_HZ  400000  // 400 kHz
+#define I2C_MASTER_TIMEOUT_MS 1000
 
-// I2C1 - Internal devices (Touch controller GT911)
-#define I2C1_SDA_PIN        15
-#define I2C1_SCL_PIN        7
-#define I2C1_FREQ_HZ        400000  // 400 kHz
+// Legacy compatibility defines
+#define I2C0_SDA_PIN        I2C_MASTER_SDA_IO
+#define I2C0_SCL_PIN        I2C_MASTER_SCL_IO
+#define I2C0_FREQ_HZ        I2C_MASTER_FREQ_HZ
 
 // I2C Device Addresses
 #define I2C_ADDR_CH422G     0x24    // I/O Expander
+#define I2C_ADDR_CH422G_OUT 0x38    // CH422G output control address
 #define I2C_ADDR_GT911      0x5D    // Touch controller
 #define I2C_ADDR_PCF85063   0x51    // RTC
 #define I2C_ADDR_NEO8M_GPS  0x42    // NEO-8M GPS module (optional)
@@ -106,11 +110,17 @@
 // ============================================================================
 // Touch Controller - GT911
 // ============================================================================
-#define TOUCH_I2C_NUM       1       // Use I2C1
-#define TOUCH_INT_PIN       4       // Touch interrupt (active low)
+#define TOUCH_I2C_NUM       I2C_MASTER_NUM  // Use I2C0 (all I2C devices on same bus)
+#define TOUCH_INT_PIN       4       // GPIO4 - Touch interrupt (active low)
+#define TOUCH_RST_PIN       (-1)    // Reset controlled via CH422G I/O expander EXIO1
 #define TOUCH_POINTS_MAX    5       // 5-point multi-touch
 
-// Touch reset controlled via CH422G I/O expander EXIO1
+// ============================================================================
+// RTC - PCF85063A
+// ============================================================================
+#define RTC_I2C_NUM         I2C_MASTER_NUM  // Use I2C0 (same bus as all I2C devices)
+#define RTC_I2C_ADDR        I2C_ADDR_PCF85063  // 0x51
+#define RTC_INT_PIN         6       // GPIO6 - RTC alarm interrupt (per Waveshare example)
 
 // ============================================================================
 // CH422G I/O Expander Configuration
@@ -125,9 +135,10 @@
 // ============================================================================
 // CAN Bus / NMEA 2000 (TWAI)
 // ============================================================================
-#define CAN_TX_PIN          15      // CAN transmit
-#define CAN_RX_PIN          16      // CAN receive
-#define CAN_SPEED_KBPS      250     // NMEA 2000 standard speed
+// Per Waveshare ESP32-S3-Touch-LCD-4.3B-BOX-KNOWLEDGE.md and schematic
+#define CAN_TX_PIN          15      // GPIO15 - CAN transmit (CANTX)
+#define CAN_RX_PIN          16      // GPIO16 - CAN receive (CANRX)
+#define CAN_SPEED_KBPS      250     // NMEA 2000 standard speed (250 kbps)
 
 // CAN termination is via onboard 120Ω resistor (enable jumper if at network end)
 
