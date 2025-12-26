@@ -20,7 +20,11 @@ idf_component_register(SRCS "main.c"
                             "ui_header.c"
                             "ui_footer.c"
                             "screens.c"
+                            "datetime_settings.c"
                             "rtc_pcf85063a.c"
+                            "power_management.c"
+                            "ch422g.c"
+                            "sd_card.c"
                             # Custom fonts - Orbitron (futuristic/technical)
                             "fonts/orbitron_variablefont_wght_16.c"
                             "fonts/orbitron_variablefont_wght_20.c"
@@ -49,4 +53,5 @@ idf_component_register(SRCS "main.c"
                             "fonts/sfnsrounded_24.c"
                             "fonts/sfnsrounded_32.c"
                             "fonts/sfnsrounded_48.c"
-                       INCLUDE_DIRS ".")
+                       INCLUDE_DIRS "."
+                       REQUIRES fatfs console sdmmc vfs spi_flash nvs_flash)

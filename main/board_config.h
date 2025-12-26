@@ -123,8 +123,18 @@
 #define RTC_INT_PIN         6       // GPIO6 - RTC alarm interrupt (per Waveshare example)
 
 // ============================================================================
-// CH422G I/O Expander Configuration
+// CH422G I/O Expander Configuration (ESP IO Expander Library)
 // ============================================================================
+#include "esp_io_expander.h"
+
+// Pin bit masks for esp_io_expander library
+#define TP_RST              IO_EXPANDER_PIN_NUM_1   // Touch reset
+#define LCD_BL              IO_EXPANDER_PIN_NUM_2   // LCD backlight enable
+#define LCD_RST             IO_EXPANDER_PIN_NUM_3   // LCD reset
+#define SD_CS               IO_EXPANDER_PIN_NUM_4   // SD card chip select
+#define USB_SEL             IO_EXPANDER_PIN_NUM_5   // USB selection
+
+// Legacy definitions (pin numbers)
 #define CH422G_EXIO0        0       // Reserved
 #define CH422G_EXIO1        1       // Touch reset
 #define CH422G_EXIO2        2       // LCD backlight enable

@@ -244,9 +244,9 @@ esp_err_t lvgl_init(void) {
 
     ESP_LOGI(TAG, "LVGL tick timer started (10ms period)");
 
-    // Create LVGL task (Waveshare standard: priority 2, 6KB stack)
+    // Create LVGL task (increased to 10KB for SD card operations)
     const int LVGL_TASK_PRIORITY = 2;
-    const int LVGL_TASK_STACK = 6144;
+    const int LVGL_TASK_STACK = 10240;  // 10KB (was 6KB)
 
     BaseType_t task_ret = xTaskCreatePinnedToCore(
         lvgl_task,

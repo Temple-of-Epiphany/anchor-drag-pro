@@ -37,7 +37,9 @@
 #include "rtc_pcf85063a.h"
 #include "tv_test_pattern.h"
 #include "ui_footer.h"
+#include "ui_header.h"
 #include "screens.h"
+#include "power_management.h"
 
 // External font declarations
 LV_FONT_DECLARE(orbitron_variablefont_wght_24);
@@ -412,6 +414,17 @@ void app_main(void)
     ESP_LOGI(TAG, "================================================================================");
     ESP_LOGI(TAG, "");
 
+    // Initialize power management and check wake-up cause
+    ESP_LOGI(TAG, "Initializing power management...");
+    power_mgmt_init();
+
+    if (power_mgmt_is_wake_from_sleep()) {
+        ESP_LOGI(TAG, "Device woke from deep sleep");
+        power_mgmt_restore_state();
+    } else {
+        ESP_LOGI(TAG, "Cold boot (normal startup)");
+    }
+
     // Initialize RTC (Real-Time Clock)
     ESP_LOGI(TAG, "Initializing RTC (PCF85063A)...");
     PCF85063A_Init();
@@ -655,19 +668,11 @@ void app_main(void)
 
         // Add gesture detection to all navigation screens
         for (int i = 0; i < PAGE_COUNT; i++) {
-            // Create gesture area for main content (doesn't cover footer to avoid blocking buttons)
-            lv_obj_t *gesture_area = lv_obj_create(g_screens[i]);
-            lv_obj_set_size(gesture_area, 800, 420);  // Full width, but only upper area (not footer)
-            lv_obj_align(gesture_area, LV_ALIGN_TOP_MID, 0, 0);
-            lv_obj_set_style_bg_opa(gesture_area, LV_OPA_TRANSP, 0);  // Invisible
-            lv_obj_set_style_border_width(gesture_area, 0, 0);
-            lv_obj_set_style_radius(gesture_area, 0, 0);
-            lv_obj_move_background(gesture_area);  // Move to back so it doesn't block UI elements
-
-            // Register for all touch events for global gesture detection
-            lv_obj_add_event_cb(gesture_area, global_gesture_cb, LV_EVENT_PRESSED, NULL);
-            lv_obj_add_event_cb(gesture_area, global_gesture_cb, LV_EVENT_PRESSING, NULL);
-            lv_obj_add_event_cb(gesture_area, global_gesture_cb, LV_EVENT_RELEASED, NULL);
+            // Add gesture callbacks directly to the screen (not a separate overlay)
+            // This allows gestures to work while still allowing buttons to be clicked
+            lv_obj_add_event_cb(g_screens[i], global_gesture_cb, LV_EVENT_PRESSED, NULL);
+            lv_obj_add_event_cb(g_screens[i], global_gesture_cb, LV_EVENT_PRESSING, NULL);
+            lv_obj_add_event_cb(g_screens[i], global_gesture_cb, LV_EVENT_RELEASED, NULL);
         }
 
         lvgl_unlock();
@@ -707,9 +712,48 @@ void app_main(void)
     ESP_LOGI(TAG, "Display: %dx%d RGB%d", LCD_WIDTH, LCD_HEIGHT, LCD_COLOR_BITS);
     ESP_LOGI(TAG, "Navigation screens ready - use footer buttons to switch between pages");
 
-    // Main application loop
+    // RTC time update task - updates header time displays every second
+    ESP_LOGI(TAG, "Starting RTC time update task...");
+    datetime_t rtc_current;
+    int update_count = 0;
     while (1) {
-        vTaskDelay(pdMS_TO_TICKS(30000));  // Sleep 30 seconds
-        ESP_LOGI(TAG, "System running - Free heap: %lu bytes", esp_get_free_heap_size());
+        // Read current time from RTC
+        PCF85063A_Read_now(&rtc_current);
+
+        // Log time every 10 seconds
+        if (update_count % 10 == 0) {
+            ESP_LOGI(TAG, "RTC Time: %02d:%02d:%02d", rtc_current.hour, rtc_current.min, rtc_current.sec);
+        }
+
+        // Update header time displays on all screens
+        if (lvgl_lock(50)) {
+            int headers_updated = 0;
+            for (int i = 0; i < PAGE_COUNT; i++) {
+                if (g_screens[i] != NULL) {
+                    // Find header in this screen by checking all children
+                    lv_obj_t *screen = g_screens[i];
+                    uint32_t child_count = lv_obj_get_child_cnt(screen);
+
+                    // Search through children to find the header (has valid ui_header_data_t)
+                    for (uint32_t j = 0; j < child_count; j++) {
+                        lv_obj_t *child = lv_obj_get_child(screen, j);
+                        if (child != NULL) {
+                            // Try to update time - function will validate if this is actually a header
+                            if (ui_header_set_time(child, rtc_current.hour, rtc_current.min, rtc_current.sec)) {
+                                headers_updated++;
+                                break;  // Found and updated the header for this screen
+                            }
+                        }
+                    }
+                }
+            }
+            if (update_count % 10 == 0) {
+                ESP_LOGI(TAG, "Updated %d headers", headers_updated);
+            }
+            lvgl_unlock();
+        }
+
+        update_count++;
+        vTaskDelay(pdMS_TO_TICKS(1000));  // Update every 1 second
     }
 }
