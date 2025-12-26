@@ -121,12 +121,16 @@ idf.py set-target esp32s3
 See `docs/ESP32-S3-Touch-LCD-4.3B-BOX-KNOWLEDGE.md` for complete pin mapping.
 
 **Key Peripherals:**
-- **I2C0** (External): GPIO8 (SDA), GPIO9 (SCL) - GPS, external sensors
-- **I2C1** (Internal): GPIO15 (SDA), GPIO7 (SCL) - Touch controller GT911
-- **CAN/TWAI**: GPIO15 (TX), GPIO16 (RX) - NMEA 2000
-- **Touch Interrupt**: GPIO4 - GT911 touch IRQ
+- **I2C0** (Shared by ALL devices): GPIO8 (SDA), GPIO9 (SCL) @ 400kHz
+  - CH422G I/O Expander: 0x24 (read) / 0x38 (write)
+  - GT911 Touch Controller: 0x5D
+  - PCF85063A RTC: 0x51
+  - GPS (optional): 0x42
+- **CAN/TWAI**: GPIO15 (TX), GPIO16 (RX) - NMEA 2000 @ 250kbps
+- **Touch Interrupt**: GPIO4 - GT911 touch IRQ (active low)
 - **SD Card SPI**: GPIO11 (MOSI), GPIO12 (SCK), GPIO13 (MISO), CS via CH422G EXIO4
 - **RGB LCD**: 16-bit parallel interface (see knowledge doc for full pin list)
+- **RS485**: GPIO43 (RX), GPIO44 (TX) - NMEA 0183
 
 **I/O Expander (CH422G at 0x24):**
 - EXIO0: Reserved
