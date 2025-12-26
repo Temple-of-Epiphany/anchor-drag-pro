@@ -17,11 +17,17 @@
 
 // Screen creation functions
 // Each function returns the screen object and sets *footer_out to the footer reference
+
+// Navigation screens (with footer)
 lv_obj_t* create_start_screen(ui_footer_page_cb_t page_callback, lv_obj_t **footer_out);
 lv_obj_t* create_info_screen(ui_footer_page_cb_t page_callback, lv_obj_t **footer_out);
 lv_obj_t* create_pgn_screen(ui_footer_page_cb_t page_callback, lv_obj_t **footer_out);
 lv_obj_t* create_config_screen(ui_footer_page_cb_t page_callback, lv_obj_t **footer_out);
 lv_obj_t* create_update_screen(ui_footer_page_cb_t page_callback, lv_obj_t **footer_out);
 lv_obj_t* create_tools_screen(ui_footer_page_cb_t page_callback, lv_obj_t **footer_out);
+
+// Special screens (no footer)
+lv_obj_t* create_display_screen(void);  // Main anchor monitoring screen
+lv_obj_t* create_test_screen(void);     // Hardware testing screen
 
 #endif // SCREENS_H

@@ -229,19 +229,21 @@ lv_obj_t* ui_footer_create(lv_obj_t *parent, ui_page_t current_page, ui_footer_p
     lv_obj_center(data->button_container);
     lv_obj_set_style_bg_opa(data->button_container, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(data->button_container, 0, 0);
-    lv_obj_set_style_pad_all(data->button_container, 0, 0);
-    lv_obj_set_style_pad_column(data->button_container, 6, 0);  // 6px gap between buttons
+    lv_obj_set_style_pad_all(data->button_container, 5, 0);
+    lv_obj_set_style_pad_column(data->button_container, 8, 0);  // 8px gap between buttons
     lv_obj_set_flex_flow(data->button_container, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(data->button_container, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
     // Enable horizontal scrolling, disable vertical
-    lv_obj_set_scrollbar_mode(data->button_container, LV_SCROLLBAR_MODE_AUTO);
+    lv_obj_set_scrollbar_mode(data->button_container, LV_SCROLLBAR_MODE_ON);  // Always show scrollbar
     lv_obj_set_scroll_dir(data->button_container, LV_DIR_HOR);  // Horizontal only
+    lv_obj_set_scroll_snap_x(data->button_container, LV_SCROLL_SNAP_CENTER);  // Snap to buttons
     lv_obj_set_style_pad_right(data->button_container, 10, 0);  // Padding at end
 
     // Create navigation buttons for each page with fixed width
-    int button_width = 120;  // Fixed width - allows scrolling if too many buttons
+    int button_width = 130;  // Slightly wider - ensures scrolling is needed
     FOOTER_LOG_DEBUG("    Creating %d buttons (width: %d px each, scrollable)", PAGE_COUNT, button_width);
+    ESP_LOGI(TAG, "Footer buttons will require scrolling - swipe left/right or drag to see all buttons");
 
     for (int i = 0; i < PAGE_COUNT; i++) {
         data->page_buttons[i] = lv_btn_create(data->button_container);
@@ -344,6 +346,10 @@ void ui_footer_set_page(lv_obj_t *footer, ui_page_t current_page) {
             lv_obj_set_style_shadow_opa(data->page_buttons[i], LV_OPA_70, 0);
             lv_obj_set_style_shadow_ofs_y(data->page_buttons[i], 0, 0);
             FOOTER_LOG_DEBUG("    Button [%d] set to ACTIVE (teal)", i);
+
+            // Scroll to the active button to bring it into view
+            lv_obj_scroll_to_view(data->page_buttons[i], LV_ANIM_ON);
+            FOOTER_LOG_DEBUG("    Scrolled to button [%s] to bring it into view", page_names[i]);
         } else {
             // Inactive button - darker blue
             lv_obj_set_style_bg_color(data->page_buttons[i], lv_color_hex(0x003366), 0);

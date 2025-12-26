@@ -15,6 +15,7 @@
 
 #include "splash_screen.h"
 #include "ui_version.h"
+#include "ui_theme.h"
 #include "board_config.h"
 #include "lvgl_init.h"
 #include "ui_header.h"
@@ -64,7 +65,7 @@ static void create_splash_ui(void) {
     }
 
     // Set background color and make it opaque (critical for rendering)
-    lv_obj_set_style_bg_color(splash_screen, lv_color_hex(0x001F3F), 0);  // Dark blue
+    lv_obj_set_style_bg_color(splash_screen, lv_color_hex(COLOR_PRIMARY_DARK), 0);  // Dark Navy Blue
     lv_obj_set_style_bg_opa(splash_screen, LV_OPA_COVER, 0);  // Fully opaque
 
     // Status header (full-width bar at top with title)
@@ -82,15 +83,14 @@ static void create_splash_ui(void) {
     // Version label - BELOW logo
     version_label = lv_label_create(splash_screen);
     lv_label_set_text(version_label, "v" UI_VERSION_STRING);
-    lv_obj_set_style_text_color(version_label, lv_color_hex(0xAAAAAA), 0);
-    lv_obj_set_style_text_font(version_label, &lv_font_montserrat_14, 0);
+    THEME_STYLE_TEXT(version_label, COLOR_DISABLED, FONT_LABEL);
     lv_obj_align_to(version_label, logo_img, LV_ALIGN_OUT_BOTTOM_MID, 0, 20);
 
     // Progress bar - BELOW version label
     progress_bar = lv_bar_create(splash_screen);
     lv_obj_set_size(progress_bar, 400, 20);
     lv_obj_align_to(progress_bar, version_label, LV_ALIGN_OUT_BOTTOM_MID, 0, 20);
-    lv_obj_set_style_bg_color(progress_bar, lv_color_hex(0x333333), 0);  // Dark gray background
+    lv_obj_set_style_bg_color(progress_bar, lv_color_hex(COLOR_BG_PANEL_DARK), 0);
     lv_obj_set_style_bg_opa(progress_bar, LV_OPA_COVER, 0);
     lv_bar_set_range(progress_bar, 0, 100);
     lv_bar_set_value(progress_bar, 0, LV_ANIM_OFF);
@@ -98,48 +98,48 @@ static void create_splash_ui(void) {
     // Progress label - BELOW progress bar
     progress_label = lv_label_create(splash_screen);
     lv_label_set_text(progress_label, "Initializing...");
-    lv_obj_set_style_text_color(progress_label, lv_color_hex(0xFFAA00), 0);
+    THEME_STYLE_TEXT(progress_label, COLOR_WARNING, FONT_BODY_NORMAL);
     lv_obj_align_to(progress_label, progress_bar, LV_ALIGN_OUT_BOTTOM_MID, 0, 10);
 
     // Self-test title (hidden initially)
     selftest_title_label = lv_label_create(splash_screen);
     lv_label_set_text(selftest_title_label, "Hardware Self-Test");
-    lv_obj_set_style_text_color(selftest_title_label, lv_color_white(), 0);
+    THEME_STYLE_TEXT(selftest_title_label, COLOR_TEXT_PRIMARY, FONT_SUBTITLE);
     lv_obj_align(selftest_title_label, LV_ALIGN_TOP_MID, 0, 140);
     lv_obj_add_flag(selftest_title_label, LV_OBJ_FLAG_HIDDEN);
 
     // TF Card check label
     tf_card_label = lv_label_create(splash_screen);
     lv_label_set_text(tf_card_label, "TF Card: Checking...");
-    lv_obj_set_style_text_color(tf_card_label, lv_color_white(), 0);
+    THEME_STYLE_TEXT(tf_card_label, COLOR_TEXT_PRIMARY, FONT_BODY_NORMAL);
     lv_obj_align(tf_card_label, LV_ALIGN_TOP_LEFT, 60, 180);
     lv_obj_add_flag(tf_card_label, LV_OBJ_FLAG_HIDDEN);
 
     // N2K check label
     n2k_label = lv_label_create(splash_screen);
     lv_label_set_text(n2k_label, "N2K Data: Checking...");
-    lv_obj_set_style_text_color(n2k_label, lv_color_white(), 0);
+    THEME_STYLE_TEXT(n2k_label, COLOR_TEXT_PRIMARY, FONT_BODY_NORMAL);
     lv_obj_align(n2k_label, LV_ALIGN_TOP_LEFT, 60, 210);
     lv_obj_add_flag(n2k_label, LV_OBJ_FLAG_HIDDEN);
 
     // NMEA 0183 check label
     nmea_label = lv_label_create(splash_screen);
     lv_label_set_text(nmea_label, "NMEA 0183: Checking...");
-    lv_obj_set_style_text_color(nmea_label, lv_color_white(), 0);
+    THEME_STYLE_TEXT(nmea_label, COLOR_TEXT_PRIMARY, FONT_BODY_NORMAL);
     lv_obj_align(nmea_label, LV_ALIGN_TOP_LEFT, 60, 240);
     lv_obj_add_flag(nmea_label, LV_OBJ_FLAG_HIDDEN);
 
     // External GPS check label
     gps_label = lv_label_create(splash_screen);
     lv_label_set_text(gps_label, "External GPS: Checking...");
-    lv_obj_set_style_text_color(gps_label, lv_color_white(), 0);
+    THEME_STYLE_TEXT(gps_label, COLOR_TEXT_PRIMARY, FONT_BODY_NORMAL);
     lv_obj_align(gps_label, LV_ALIGN_TOP_LEFT, 60, 270);
     lv_obj_add_flag(gps_label, LV_OBJ_FLAG_HIDDEN);
 
     // Status label
     status_label = lv_label_create(splash_screen);
     lv_label_set_text(status_label, "");
-    lv_obj_set_style_text_color(status_label, lv_color_hex(0x00FF00), 0);
+    THEME_STYLE_TEXT(status_label, COLOR_SUCCESS, FONT_BODY_NORMAL);
     lv_obj_set_style_text_align(status_label, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_align(status_label, LV_ALIGN_BOTTOM_MID, 0, -30);
     lv_obj_add_flag(status_label, LV_OBJ_FLAG_HIDDEN);
@@ -205,13 +205,13 @@ static void update_test_label(lv_obj_t *label, const char *name, bool passed, bo
     char text[128];
     if (checking) {
         snprintf(text, sizeof(text), "%s: Checking...", name);
-        lv_obj_set_style_text_color(label, lv_color_hex(0xFFAA00), 0);  // Orange
+        lv_obj_set_style_text_color(label, lv_color_hex(COLOR_WARNING), 0);  // Orange/Yellow
     } else if (passed) {
         snprintf(text, sizeof(text), "%s: \xE2\x9C\x93", name);  // ✓
-        lv_obj_set_style_text_color(label, lv_color_hex(0x00FF00), 0);  // Green
+        lv_obj_set_style_text_color(label, lv_color_hex(COLOR_SUCCESS), 0);  // Green
     } else {
         snprintf(text, sizeof(text), "%s: \xE2\x9C\x97", name);  // ✗
-        lv_obj_set_style_text_color(label, lv_color_hex(0xFF0000), 0);  // Red
+        lv_obj_set_style_text_color(label, lv_color_hex(COLOR_DANGER), 0);  // Red
     }
     lv_label_set_text(label, text);
     lv_obj_clear_flag(label, LV_OBJ_FLAG_HIDDEN);
@@ -455,9 +455,9 @@ esp_err_t run_self_test(selftest_results_t *results) {
         lv_obj_clear_flag(status_label, LV_OBJ_FLAG_HIDDEN);
 
         if (results->gps_ready) {
-            lv_obj_set_style_text_color(status_label, lv_color_hex(0x00FF00), 0);
+            lv_obj_set_style_text_color(status_label, lv_color_hex(COLOR_SUCCESS), 0);
         } else {
-            lv_obj_set_style_text_color(status_label, lv_color_hex(0xFF0000), 0);
+            lv_obj_set_style_text_color(status_label, lv_color_hex(COLOR_DANGER), 0);
         }
 
         lvgl_unlock();
