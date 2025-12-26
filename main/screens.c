@@ -15,10 +15,16 @@
 #include "screens.h"
 #include "ui_theme.h"
 #include "ui_header.h"
+#include "ui_version.h"
+#include "board_config.h"
 #include "datetime_settings.h"
 #include "power_management.h"
 #include "sd_card.h"
 #include "esp_log.h"
+#include "esp_system.h"
+#include "esp_chip_info.h"
+#include "esp_flash.h"
+#include "esp_heap_caps.h"
 
 static const char *TAG = "screens";
 
@@ -466,7 +472,7 @@ lv_obj_t* create_update_screen(ui_footer_page_cb_t page_callback, lv_obj_t **foo
 /**
  * Forward declarations for file browser
  */
-static lv_obj_t* create_file_browser_screen(void);
+static lv_obj_t* create_file_browser_screen(lv_obj_t *tools_screen_ref);
 
 /**
  * Format confirmation callback
@@ -542,20 +548,25 @@ static void tfcard_contents_clicked(lv_event_t *e) {
         }
     }
 
-    // Open file browser
-    lv_obj_t *browser_screen = create_file_browser_screen();
+    // Open file browser - pass tools screen for back button
+    lv_obj_t *tools_screen = (lv_obj_t *)lv_event_get_user_data(e);
+    lv_obj_t *browser_screen = create_file_browser_screen(tools_screen);
     lv_scr_load(browser_screen);
 }
 
 static void tfcard_back_clicked(lv_event_t *e) {
     ESP_LOGI(TAG, "TF CARD: Back to TOOLS");
-    // TODO: Navigate back to TOOLS screen
+    // Get tools screen from user data
+    lv_obj_t *tools_screen = (lv_obj_t *)lv_event_get_user_data(e);
+    if (tools_screen != NULL) {
+        lv_scr_load(tools_screen);
+    }
 }
 
 /**
  * TF CARD SUBMENU SCREEN
  */
-static lv_obj_t* create_tfcard_screen(void) {
+static lv_obj_t* create_tfcard_screen(lv_obj_t *tools_screen_ref) {
     lv_obj_t *screen = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(screen, lv_color_hex(THEME_SCREEN_BG), 0);
 
@@ -586,7 +597,7 @@ static lv_obj_t* create_tfcard_screen(void) {
     lv_obj_set_size(contents_btn, 300, 80);
     lv_obj_align(contents_btn, LV_ALIGN_CENTER, 0, 40);
     THEME_STYLE_BUTTON(contents_btn, THEME_BTN_PRIMARY);
-    lv_obj_add_event_cb(contents_btn, tfcard_contents_clicked, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(contents_btn, tfcard_contents_clicked, LV_EVENT_CLICKED, tools_screen_ref);
 
     lv_obj_t *contents_label = lv_label_create(contents_btn);
     lv_label_set_text(contents_label, "SHOW CONTENTS");
@@ -598,7 +609,7 @@ static lv_obj_t* create_tfcard_screen(void) {
     lv_obj_set_size(back_btn, 200, 60);
     lv_obj_align(back_btn, LV_ALIGN_BOTTOM_MID, 0, -20);
     THEME_STYLE_BUTTON(back_btn, COLOR_BTN_CONFIG);
-    lv_obj_add_event_cb(back_btn, tfcard_back_clicked, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(back_btn, tfcard_back_clicked, LV_EVENT_CLICKED, tools_screen_ref);
 
     lv_obj_t *back_label = lv_label_create(back_btn);
     lv_label_set_text(back_label, "BACK TO TOOLS");
@@ -614,12 +625,13 @@ static lv_obj_t* create_tfcard_screen(void) {
  */
 static void browser_back_clicked(lv_event_t *e) {
     ESP_LOGI(TAG, "FILE BROWSER: Back clicked");
-    // Return to TF Card menu
-    lv_obj_t *tfcard_screen = create_tfcard_screen();
+    // Get tools screen from user data and return to TF Card menu
+    lv_obj_t *tools_screen = (lv_obj_t *)lv_event_get_user_data(e);
+    lv_obj_t *tfcard_screen = create_tfcard_screen(tools_screen);
     lv_scr_load(tfcard_screen);
 }
 
-static lv_obj_t* create_file_browser_screen(void) {
+static lv_obj_t* create_file_browser_screen(lv_obj_t *tools_screen_ref) {
     lv_obj_t *screen = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(screen, lv_color_hex(THEME_SCREEN_BG), 0);
 
@@ -640,8 +652,11 @@ static lv_obj_t* create_file_browser_screen(void) {
     // Info label (card size and free space)
     lv_obj_t *info_label = lv_label_create(screen);
     if (has_space_info) {
-        lv_label_set_text_fmt(info_label, "Total: %.1f MB  Free: %.1f MB",
-            total_bytes / (1024.0 * 1024.0), free_bytes / (1024.0 * 1024.0));
+        char space_info[64];
+        float total_mb = total_bytes / (1024.0 * 1024.0);
+        float free_mb = free_bytes / (1024.0 * 1024.0);
+        snprintf(space_info, sizeof(space_info), "Total: %.1f MB  Free: %.1f MB", total_mb, free_mb);
+        lv_label_set_text(info_label, space_info);
     } else {
         lv_label_set_text(info_label, "Card info unavailable");
     }
@@ -654,17 +669,17 @@ static lv_obj_t* create_file_browser_screen(void) {
     lv_obj_align(list, LV_ALIGN_TOP_MID, 0, HEADER_HEIGHT + 80);
     lv_obj_set_style_bg_color(list, lv_color_hex(THEME_PANEL_BG), 0);
 
-    // List files from SD card
-    sd_file_info_t files[50];
+    // List files from SD card (limited to 10 to avoid stack overflow)
+    sd_file_info_t files[10];
     int file_count = 0;
 
-    if (sd_card_list_dir("", files, 50, &file_count)) {
+    if (sd_card_list_dir("", files, 10, &file_count)) {
         if (file_count == 0) {
             lv_obj_t *empty = lv_list_add_text(list, "No files found");
             lv_obj_set_style_text_color(empty, lv_color_hex(COLOR_TEXT_SECONDARY), 0);
         } else {
             for (int i = 0; i < file_count; i++) {
-                char label[300];
+                char label[128];  // Reduced from 300 to save stack space
                 if (files[i].is_directory) {
                     snprintf(label, sizeof(label), "[DIR]  %s", files[i].name);
                 } else {
@@ -695,7 +710,7 @@ static lv_obj_t* create_file_browser_screen(void) {
     lv_obj_set_size(back_btn, 200, 60);
     lv_obj_align(back_btn, LV_ALIGN_BOTTOM_MID, 0, -20);
     THEME_STYLE_BUTTON(back_btn, COLOR_BTN_CONFIG);
-    lv_obj_add_event_cb(back_btn, browser_back_clicked, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(back_btn, browser_back_clicked, LV_EVENT_CLICKED, tools_screen_ref);
 
     lv_obj_t *back_label = lv_label_create(back_btn);
     lv_label_set_text(back_label, "BACK");
@@ -707,47 +722,90 @@ static lv_obj_t* create_file_browser_screen(void) {
 }
 
 /**
+ * Forward declarations for tool screen creation functions
+ */
+static lv_obj_t* create_sysinfo_screen(lv_obj_t *tools_screen_ref);
+static lv_obj_t* create_test_hardware_screen(lv_obj_t *tools_screen_ref);
+static lv_obj_t* create_logs_menu_screen(lv_obj_t *tools_screen_ref);
+static lv_obj_t* create_view_logs_screen(lv_obj_t *tools_screen_ref);
+static lv_obj_t* create_clear_logs_screen(lv_obj_t *tools_screen_ref);
+static lv_obj_t* create_set_log_level_screen(lv_obj_t *tools_screen_ref);
+static lv_obj_t* create_clear_gps_screen(lv_obj_t *tools_screen_ref);
+static lv_obj_t* create_system_config_screen(lv_obj_t *tools_screen_ref);
+static lv_obj_t* create_wifi_bluetooth_screen(lv_obj_t *tools_screen_ref);
+static lv_obj_t* create_save_config_screen(lv_obj_t *tools_screen_ref);
+static lv_obj_t* create_load_config_screen(lv_obj_t *tools_screen_ref);
+static lv_obj_t* create_factory_reset_screen(lv_obj_t *tools_screen_ref);
+
+/**
  * Button callbacks for TOOLS screen
  */
 static void tools_tfcard_clicked(lv_event_t *e) {
     ESP_LOGI(TAG, "TOOLS: TF Card clicked - opening TF Card submenu");
-    lv_obj_t *tfcard_screen = create_tfcard_screen();
+    lv_obj_t *tools_screen = lv_scr_act();  // Get current (tools) screen
+    lv_obj_t *tfcard_screen = create_tfcard_screen(tools_screen);
     lv_scr_load(tfcard_screen);
 }
 
 static void tools_logs_clicked(lv_event_t *e) {
-    ESP_LOGI(TAG, "TOOLS: View Logs clicked");
+    ESP_LOGI(TAG, "TOOLS: Logs clicked");
+    lv_obj_t *tools_screen = lv_scr_act();
+    lv_obj_t *logs_menu_screen = create_logs_menu_screen(tools_screen);
+    lv_scr_load(logs_menu_screen);
 }
 
 static void tools_clear_clicked(lv_event_t *e) {
     ESP_LOGI(TAG, "TOOLS: Clear GPS Tracks clicked");
+    lv_obj_t *tools_screen = lv_scr_act();
+    lv_obj_t *clear_screen = create_clear_gps_screen(tools_screen);
+    lv_scr_load(clear_screen);
 }
 
-static void tools_save_config_clicked(lv_event_t *e) {
-    ESP_LOGI(TAG, "TOOLS: Save Config clicked");
+static void tools_config_clicked(lv_event_t *e) {
+    ESP_LOGI(TAG, "TOOLS: Configuration clicked");
+    lv_obj_t *tools_screen = lv_scr_act();
+    lv_obj_t *config_screen = create_system_config_screen(tools_screen);
+    lv_scr_load(config_screen);
+}
+
+static void tools_wifi_bt_clicked(lv_event_t *e) {
+    ESP_LOGI(TAG, "TOOLS: WiFi/Bluetooth clicked");
+    lv_obj_t *tools_screen = lv_scr_act();
+    lv_obj_t *wifi_bt_screen = create_wifi_bluetooth_screen(tools_screen);
+    lv_scr_load(wifi_bt_screen);
 }
 
 static void tools_sysinfo_clicked(lv_event_t *e) {
     ESP_LOGI(TAG, "TOOLS: System Info clicked");
+    lv_obj_t *tools_screen = lv_scr_act();
+    lv_obj_t *sysinfo_screen = create_sysinfo_screen(tools_screen);
+    lv_scr_load(sysinfo_screen);
 }
 
 static void tools_test_clicked(lv_event_t *e) {
     ESP_LOGI(TAG, "TOOLS: Test Hardware clicked");
+    lv_obj_t *tools_screen = lv_scr_act();
+    lv_obj_t *test_screen = create_test_hardware_screen(tools_screen);
+    lv_scr_load(test_screen);
 }
 
-static void tools_load_config_clicked(lv_event_t *e) {
-    ESP_LOGI(TAG, "TOOLS: Load Config clicked");
-}
+// Removed tools_load_config_clicked - consolidated with tools_config_clicked
 
 static void tools_reset_clicked(lv_event_t *e) {
     ESP_LOGI(TAG, "TOOLS: Factory Reset clicked");
+    lv_obj_t *tools_screen = lv_scr_act();
+    lv_obj_t *reset_screen = create_factory_reset_screen(tools_screen);
+    lv_scr_load(reset_screen);
 }
 
 static void tools_datetime_clicked(lv_event_t *e) {
     ESP_LOGI(TAG, "TOOLS: Date/Time Settings clicked - opening datetime settings screen");
 
+    // Get current tools screen for back button
+    lv_obj_t *tools_screen = lv_scr_act();
+
     // Create and load datetime settings screen
-    lv_obj_t *datetime_screen = create_datetime_settings_screen(NULL, NULL);
+    lv_obj_t *datetime_screen = create_datetime_settings_screen(tools_screen, NULL, NULL);
     lv_scr_load(datetime_screen);
 }
 
@@ -768,6 +826,1021 @@ static lv_obj_t* create_tool_button(lv_obj_t *parent, const char *label, int x, 
     lv_obj_center(btn_label);
 
     return btn;
+}
+
+/**
+ * SYSTEM INFO SCREEN - Display system information
+ */
+static void sysinfo_back_clicked(lv_event_t *e) {
+    lv_obj_t *tools_screen = (lv_obj_t *)lv_event_get_user_data(e);
+    if (tools_screen != NULL) {
+        lv_scr_load(tools_screen);
+    }
+}
+
+static lv_obj_t* create_sysinfo_screen(lv_obj_t *tools_screen_ref) {
+    lv_obj_t *screen = lv_obj_create(NULL);
+    lv_obj_set_style_bg_color(screen, lv_color_hex(THEME_SCREEN_BG), 0);
+
+    // Create header
+    lv_obj_t *header = ui_header_create(screen);
+    ui_header_set_gps_status(header, false);
+
+    // Title
+    lv_obj_t *title = lv_label_create(screen);
+    lv_label_set_text(title, "SYSTEM INFO");
+    THEME_STYLE_TEXT(title, THEME_TITLE_COLOR, FONT_TITLE);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, HEADER_HEIGHT + SPACING_MARGIN_SMALL);
+
+    // Get system information
+    esp_chip_info_t chip_info;
+    esp_chip_info(&chip_info);
+    uint32_t flash_size;
+    esp_flash_get_size(NULL, &flash_size);
+
+    // Info text area
+    lv_obj_t *info_label = lv_label_create(screen);
+    char info_text[512];
+    snprintf(info_text, sizeof(info_text),
+        "Firmware Version:  %s\n"
+        "UI Version:        %s\n\n"
+        "ESP-IDF:           %s\n"
+        "Chip:              %s Rev %d\n"
+        "Cores:             %d\n"
+        "Flash:             %u MB %s\n"
+        "PSRAM:             %s\n\n"
+        "Free Heap:         %u KB\n"
+        "Min Free Heap:     %u KB\n"
+        "PSRAM Free:        %u KB",
+        FW_VERSION_STRING,
+        UI_VERSION_STRING,
+        esp_get_idf_version(),
+        CONFIG_IDF_TARGET,
+        chip_info.revision,
+        chip_info.cores,
+        (unsigned int)(flash_size / (1024 * 1024)),
+        (chip_info.features & CHIP_FEATURE_EMB_FLASH) ? "embedded" : "external",
+        (chip_info.features & CHIP_FEATURE_EMB_PSRAM) ? "Yes" : "No",
+        (unsigned int)(esp_get_free_heap_size() / 1024),
+        (unsigned int)(esp_get_minimum_free_heap_size() / 1024),
+        (unsigned int)(heap_caps_get_free_size(MALLOC_CAP_SPIRAM) / 1024));
+
+    lv_label_set_text(info_label, info_text);
+    lv_obj_set_style_text_color(info_label, lv_color_white(), 0);
+    lv_obj_set_style_text_font(info_label, FONT_BODY_LARGE, 0);  // 20pt instead of 14pt
+    lv_obj_align(info_label, LV_ALIGN_TOP_LEFT, 30, HEADER_HEIGHT + 60);
+
+    // Back button
+    lv_obj_t *back_btn = lv_btn_create(screen);
+    lv_obj_set_size(back_btn, 150, 50);
+    lv_obj_align(back_btn, LV_ALIGN_BOTTOM_LEFT, 30, -20);
+    THEME_STYLE_BUTTON(back_btn, THEME_BTN_CANCEL);
+    lv_obj_add_event_cb(back_btn, sysinfo_back_clicked, LV_EVENT_CLICKED, tools_screen_ref);
+
+    lv_obj_t *back_label = lv_label_create(back_btn);
+    lv_label_set_text(back_label, "BACK");
+    THEME_STYLE_TEXT(back_label, COLOR_TEXT_PRIMARY, FONT_BUTTON_LARGE);
+    lv_obj_center(back_label);
+
+    return screen;
+}
+
+/**
+ * TEST HARDWARE SCREEN - Hardware test utilities
+ */
+static void test_hw_back_clicked(lv_event_t *e) {
+    lv_obj_t *tools_screen = (lv_obj_t *)lv_event_get_user_data(e);
+    if (tools_screen != NULL) {
+        lv_scr_load(tools_screen);
+    }
+}
+
+static lv_obj_t* create_test_hardware_screen(lv_obj_t *tools_screen_ref) {
+    lv_obj_t *screen = lv_obj_create(NULL);
+    lv_obj_set_style_bg_color(screen, lv_color_hex(THEME_SCREEN_BG), 0);
+
+    // Create header
+    lv_obj_t *header = ui_header_create(screen);
+    ui_header_set_gps_status(header, false);
+
+    // Title
+    lv_obj_t *title = lv_label_create(screen);
+    lv_label_set_text(title, "TEST HARDWARE");
+    THEME_STYLE_TEXT(title, THEME_TITLE_COLOR, FONT_TITLE);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, HEADER_HEIGHT + SPACING_MARGIN_SMALL);
+
+    // Info label
+    lv_obj_t *info_label = lv_label_create(screen);
+    lv_label_set_text(info_label, "Hardware test options coming soon:\n\n"
+                                   "- Display test pattern\n"
+                                   "- Touch calibration\n"
+                                   "- SD card read/write test\n"
+                                   "- GPS signal test\n"
+                                   "- Buzzer test");
+    lv_obj_set_style_text_color(info_label, lv_color_white(), 0);
+    lv_obj_set_style_text_font(info_label, &lv_font_montserrat_14, 0);
+    lv_obj_align(info_label, LV_ALIGN_CENTER, 0, -20);
+
+    // Back button
+    lv_obj_t *back_btn = lv_btn_create(screen);
+    lv_obj_set_size(back_btn, 150, 50);
+    lv_obj_align(back_btn, LV_ALIGN_BOTTOM_LEFT, 30, -20);
+    THEME_STYLE_BUTTON(back_btn, THEME_BTN_CANCEL);
+    lv_obj_add_event_cb(back_btn, test_hw_back_clicked, LV_EVENT_CLICKED, tools_screen_ref);
+
+    lv_obj_t *back_label = lv_label_create(back_btn);
+    lv_label_set_text(back_label, "BACK");
+    THEME_STYLE_TEXT(back_label, COLOR_TEXT_PRIMARY, FONT_BUTTON_LARGE);
+    lv_obj_center(back_label);
+
+    return screen;
+}
+
+/**
+ * LOGS MENU SCREEN - Logs management options
+ */
+
+static void logs_menu_view_clicked(lv_event_t *e) {
+    ESP_LOGI(TAG, "LOGS MENU: View Logs clicked");
+    lv_obj_t *logs_menu_screen = lv_scr_act();
+    lv_obj_t *view_screen = create_view_logs_screen(logs_menu_screen);
+    lv_scr_load(view_screen);
+}
+
+static void logs_menu_clear_clicked(lv_event_t *e) {
+    ESP_LOGI(TAG, "LOGS MENU: Clear Logs clicked");
+    lv_obj_t *logs_menu_screen = lv_scr_act();
+    lv_obj_t *clear_screen = create_clear_logs_screen(logs_menu_screen);
+    lv_scr_load(clear_screen);
+}
+
+static void logs_menu_level_clicked(lv_event_t *e) {
+    ESP_LOGI(TAG, "LOGS MENU: Set Log Level clicked");
+    lv_obj_t *logs_menu_screen = lv_scr_act();
+    lv_obj_t *level_screen = create_set_log_level_screen(logs_menu_screen);
+    lv_scr_load(level_screen);
+}
+
+static void logs_menu_back_clicked(lv_event_t *e) {
+    lv_obj_t *tools_screen = (lv_obj_t *)lv_event_get_user_data(e);
+    if (tools_screen != NULL) {
+        lv_scr_load(tools_screen);
+    }
+}
+
+static lv_obj_t* create_logs_menu_screen(lv_obj_t *tools_screen_ref) {
+    lv_obj_t *screen = lv_obj_create(NULL);
+    lv_obj_set_style_bg_color(screen, lv_color_hex(THEME_SCREEN_BG), 0);
+
+    // Create header
+    lv_obj_t *header = ui_header_create(screen);
+    ui_header_set_gps_status(header, false);
+
+    // Title
+    lv_obj_t *title = lv_label_create(screen);
+    lv_label_set_text(title, "LOGS");
+    THEME_STYLE_TEXT(title, THEME_TITLE_COLOR, FONT_TITLE);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, HEADER_HEIGHT + SPACING_MARGIN_SMALL);
+
+    // Create three large buttons centered
+    int btn_width = 300;
+    int btn_height = 70;
+    int btn_spacing = 20;
+    int start_y = HEADER_HEIGHT + 100;
+
+    // View Logs button
+    lv_obj_t *view_btn = lv_btn_create(screen);
+    lv_obj_set_size(view_btn, btn_width, btn_height);
+    lv_obj_align(view_btn, LV_ALIGN_TOP_MID, 0, start_y);
+    THEME_STYLE_BUTTON(view_btn, THEME_BTN_PRIMARY);
+    lv_obj_add_event_cb(view_btn, logs_menu_view_clicked, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_t *view_label = lv_label_create(view_btn);
+    lv_label_set_text(view_label, "VIEW LOGS");
+    THEME_STYLE_TEXT(view_label, COLOR_TEXT_PRIMARY, FONT_BUTTON_LARGE);
+    lv_obj_center(view_label);
+
+    // Clear Logs button
+    lv_obj_t *clear_btn = lv_btn_create(screen);
+    lv_obj_set_size(clear_btn, btn_width, btn_height);
+    lv_obj_align(clear_btn, LV_ALIGN_TOP_MID, 0, start_y + btn_height + btn_spacing);
+    THEME_STYLE_BUTTON(clear_btn, THEME_BTN_DANGER);
+    lv_obj_add_event_cb(clear_btn, logs_menu_clear_clicked, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_t *clear_label = lv_label_create(clear_btn);
+    lv_label_set_text(clear_label, "CLEAR LOGS");
+    THEME_STYLE_TEXT(clear_label, COLOR_TEXT_PRIMARY, FONT_BUTTON_LARGE);
+    lv_obj_center(clear_label);
+
+    // Set Log Level button
+    lv_obj_t *level_btn = lv_btn_create(screen);
+    lv_obj_set_size(level_btn, btn_width, btn_height);
+    lv_obj_align(level_btn, LV_ALIGN_TOP_MID, 0, start_y + (btn_height + btn_spacing) * 2);
+    THEME_STYLE_BUTTON(level_btn, COLOR_BTN_CONFIG);
+    lv_obj_add_event_cb(level_btn, logs_menu_level_clicked, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_t *level_label = lv_label_create(level_btn);
+    lv_label_set_text(level_label, "SET LOG LEVEL");
+    THEME_STYLE_TEXT(level_label, COLOR_TEXT_PRIMARY, FONT_BUTTON_LARGE);
+    lv_obj_center(level_label);
+
+    // Back button
+    lv_obj_t *back_btn = lv_btn_create(screen);
+    lv_obj_set_size(back_btn, 150, 50);
+    lv_obj_align(back_btn, LV_ALIGN_BOTTOM_LEFT, 30, -20);
+    THEME_STYLE_BUTTON(back_btn, THEME_BTN_CANCEL);
+    lv_obj_add_event_cb(back_btn, logs_menu_back_clicked, LV_EVENT_CLICKED, tools_screen_ref);
+
+    lv_obj_t *back_label = lv_label_create(back_btn);
+    lv_label_set_text(back_label, "BACK");
+    THEME_STYLE_TEXT(back_label, COLOR_TEXT_PRIMARY, FONT_BUTTON_LARGE);
+    lv_obj_center(back_label);
+
+    return screen;
+}
+
+/**
+ * VIEW LOGS SCREEN - Display recent log entries
+ */
+static void view_logs_back_clicked(lv_event_t *e) {
+    lv_obj_t *logs_menu_screen = (lv_obj_t *)lv_event_get_user_data(e);
+    if (logs_menu_screen != NULL) {
+        lv_scr_load(logs_menu_screen);
+    }
+}
+
+static lv_obj_t* create_view_logs_screen(lv_obj_t *logs_menu_ref) {
+    lv_obj_t *screen = lv_obj_create(NULL);
+    lv_obj_set_style_bg_color(screen, lv_color_hex(THEME_SCREEN_BG), 0);
+
+    // Create header
+    lv_obj_t *header = ui_header_create(screen);
+    ui_header_set_gps_status(header, false);
+
+    // Title
+    lv_obj_t *title = lv_label_create(screen);
+    lv_label_set_text(title, "VIEW LOGS");
+    THEME_STYLE_TEXT(title, THEME_TITLE_COLOR, FONT_TITLE);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, HEADER_HEIGHT + SPACING_MARGIN_SMALL);
+
+    // Info label
+    lv_obj_t *info_label = lv_label_create(screen);
+    lv_label_set_text(info_label, "Log viewing functionality coming soon.\n\n"
+                                   "Will display recent system logs\n"
+                                   "and GPS tracking data.");
+    lv_obj_set_style_text_color(info_label, lv_color_white(), 0);
+    lv_obj_set_style_text_font(info_label, &lv_font_montserrat_14, 0);
+    lv_obj_align(info_label, LV_ALIGN_CENTER, 0, -20);
+
+    // Back button
+    lv_obj_t *back_btn = lv_btn_create(screen);
+    lv_obj_set_size(back_btn, 150, 50);
+    lv_obj_align(back_btn, LV_ALIGN_BOTTOM_LEFT, 30, -20);
+    THEME_STYLE_BUTTON(back_btn, THEME_BTN_CANCEL);
+    lv_obj_add_event_cb(back_btn, view_logs_back_clicked, LV_EVENT_CLICKED, logs_menu_ref);
+
+    lv_obj_t *back_label = lv_label_create(back_btn);
+    lv_label_set_text(back_label, "BACK");
+    THEME_STYLE_TEXT(back_label, COLOR_TEXT_PRIMARY, FONT_BUTTON_LARGE);
+    lv_obj_center(back_label);
+
+    return screen;
+}
+
+/**
+ * CLEAR LOGS SCREEN - Confirmation dialog for clearing all logs
+ */
+static void clear_logs_back_clicked(lv_event_t *e) {
+    lv_obj_t *logs_menu_screen = (lv_obj_t *)lv_event_get_user_data(e);
+    if (logs_menu_screen != NULL) {
+        lv_scr_load(logs_menu_screen);
+    }
+}
+
+static void clear_logs_confirm_clicked(lv_event_t *e) {
+    ESP_LOGI(TAG, "All logs cleared");
+    // TODO: Implement actual log clearing functionality
+    // - Clear log files from SD card
+    // - Clear in-memory log buffer
+    // - Reset log file counter
+    lv_obj_t *logs_menu_screen = (lv_obj_t *)lv_event_get_user_data(e);
+    if (logs_menu_screen != NULL) {
+        lv_scr_load(logs_menu_screen);
+    }
+}
+
+static lv_obj_t* create_clear_logs_screen(lv_obj_t *logs_menu_ref) {
+    lv_obj_t *screen = lv_obj_create(NULL);
+    lv_obj_set_style_bg_color(screen, lv_color_hex(THEME_SCREEN_BG), 0);
+
+    // Create header
+    lv_obj_t *header = ui_header_create(screen);
+    ui_header_set_gps_status(header, false);
+
+    // Title
+    lv_obj_t *title = lv_label_create(screen);
+    lv_label_set_text(title, "CLEAR LOGS");
+    THEME_STYLE_TEXT(title, THEME_TITLE_COLOR, FONT_TITLE);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, HEADER_HEIGHT + SPACING_MARGIN_SMALL);
+
+    // Warning message
+    lv_obj_t *warning = lv_label_create(screen);
+    lv_label_set_text(warning, "WARNING: This will permanently delete\n"
+                                "all system logs and GPS track data.\n\n"
+                                "This action cannot be undone.");
+    THEME_STYLE_TEXT(warning, COLOR_WARNING, FONT_BODY_LARGE);
+    lv_obj_set_style_text_align(warning, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_align(warning, LV_ALIGN_CENTER, 0, -40);
+
+    // CLEAR button (red/danger)
+    lv_obj_t *clear_btn = lv_btn_create(screen);
+    lv_obj_set_size(clear_btn, 250, 60);
+    lv_obj_align(clear_btn, LV_ALIGN_BOTTOM_MID, 0, -80);
+    THEME_STYLE_BUTTON(clear_btn, THEME_BTN_DANGER);
+    lv_obj_add_event_cb(clear_btn, clear_logs_confirm_clicked, LV_EVENT_CLICKED, logs_menu_ref);
+
+    lv_obj_t *clear_label = lv_label_create(clear_btn);
+    lv_label_set_text(clear_label, "CLEAR ALL LOGS");
+    THEME_STYLE_TEXT(clear_label, COLOR_TEXT_PRIMARY, FONT_BUTTON_LARGE);
+    lv_obj_center(clear_label);
+
+    // Back button
+    lv_obj_t *back_btn = lv_btn_create(screen);
+    lv_obj_set_size(back_btn, 150, 50);
+    lv_obj_align(back_btn, LV_ALIGN_BOTTOM_LEFT, 30, -20);
+    THEME_STYLE_BUTTON(back_btn, THEME_BTN_CANCEL);
+    lv_obj_add_event_cb(back_btn, clear_logs_back_clicked, LV_EVENT_CLICKED, logs_menu_ref);
+
+    lv_obj_t *back_label = lv_label_create(back_btn);
+    lv_label_set_text(back_label, "BACK");
+    THEME_STYLE_TEXT(back_label, COLOR_TEXT_PRIMARY, FONT_BUTTON_LARGE);
+    lv_obj_center(back_label);
+
+    return screen;
+}
+
+/**
+ * SET LOG LEVEL SCREEN - Configure system log verbosity
+ */
+static esp_log_level_t current_log_level = ESP_LOG_INFO;  // Default log level
+
+static void log_level_back_clicked(lv_event_t *e) {
+    lv_obj_t *logs_menu_screen = (lv_obj_t *)lv_event_get_user_data(e);
+    if (logs_menu_screen != NULL) {
+        lv_scr_load(logs_menu_screen);
+    }
+}
+
+static void log_level_button_clicked(lv_event_t *e) {
+    esp_log_level_t *level = (esp_log_level_t *)lv_event_get_user_data(e);
+    if (level != NULL) {
+        current_log_level = *level;
+        ESP_LOGI(TAG, "Log level changed to: %d", current_log_level);
+        // TODO: Save to NVS
+        // TODO: Apply globally with esp_log_level_set("*", current_log_level);
+    }
+}
+
+static lv_obj_t* create_set_log_level_screen(lv_obj_t *logs_menu_ref) {
+    lv_obj_t *screen = lv_obj_create(NULL);
+    lv_obj_set_style_bg_color(screen, lv_color_hex(THEME_SCREEN_BG), 0);
+
+    // Create header
+    lv_obj_t *header = ui_header_create(screen);
+    ui_header_set_gps_status(header, false);
+
+    // Title
+    lv_obj_t *title = lv_label_create(screen);
+    lv_label_set_text(title, "SET LOG LEVEL");
+    THEME_STYLE_TEXT(title, THEME_TITLE_COLOR, FONT_TITLE);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, HEADER_HEIGHT + SPACING_MARGIN_SMALL);
+
+    // Current level display
+    char current_text[64];
+    const char *level_names[] = {"NONE", "ERROR", "WARN", "INFO", "DEBUG", "VERBOSE"};
+    snprintf(current_text, sizeof(current_text), "Current Level: %s",
+             level_names[current_log_level]);
+    lv_obj_t *current_label = lv_label_create(screen);
+    lv_label_set_text(current_label, current_text);
+    THEME_STYLE_TEXT(current_label, COLOR_TEXT_SECONDARY, FONT_BODY_LARGE);
+    lv_obj_align(current_label, LV_ALIGN_TOP_MID, 0, HEADER_HEIGHT + 60);
+
+    // Static log level values (need to persist beyond function scope)
+    static esp_log_level_t level_none = ESP_LOG_NONE;
+    static esp_log_level_t level_error = ESP_LOG_ERROR;
+    static esp_log_level_t level_warn = ESP_LOG_WARN;
+    static esp_log_level_t level_info = ESP_LOG_INFO;
+    static esp_log_level_t level_debug = ESP_LOG_DEBUG;
+    static esp_log_level_t level_verbose = ESP_LOG_VERBOSE;
+
+    // Create 6 buttons for log levels in 2 columns
+    typedef struct {
+        const char *name;
+        const char *desc;
+        esp_log_level_t *level;
+        int x;
+        int y;
+    } log_level_btn_t;
+
+    log_level_btn_t levels[] = {
+        {"NONE",    "No logging",           &level_none,    -210, 110},
+        {"ERROR",   "Errors only",          &level_error,   -210, 190},
+        {"WARN",    "Warnings & errors",    &level_warn,    -210, 270},
+        {"INFO",    "Informational",        &level_info,     210, 110},
+        {"DEBUG",   "Detailed debug",       &level_debug,    210, 190},
+        {"VERBOSE", "Maximum detail",       &level_verbose,  210, 270},
+    };
+
+    for (int i = 0; i < 6; i++) {
+        lv_obj_t *btn = lv_btn_create(screen);
+        lv_obj_set_size(btn, 180, 60);
+        lv_obj_align(btn, LV_ALIGN_CENTER, levels[i].x, levels[i].y);
+
+        // Highlight current level
+        if (*levels[i].level == current_log_level) {
+            THEME_STYLE_BUTTON(btn, COLOR_SUCCESS);
+        } else {
+            THEME_STYLE_BUTTON(btn, THEME_BTN_PRIMARY);
+        }
+
+        lv_obj_add_event_cb(btn, log_level_button_clicked, LV_EVENT_CLICKED, levels[i].level);
+
+        lv_obj_t *btn_label = lv_label_create(btn);
+        char btn_text[64];
+        snprintf(btn_text, sizeof(btn_text), "%s\n%s", levels[i].name, levels[i].desc);
+        lv_label_set_text(btn_label, btn_text);
+        THEME_STYLE_TEXT(btn_label, COLOR_TEXT_PRIMARY, FONT_BODY_NORMAL);
+        lv_obj_set_style_text_align(btn_label, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_center(btn_label);
+    }
+
+    // Back button
+    lv_obj_t *back_btn = lv_btn_create(screen);
+    lv_obj_set_size(back_btn, 150, 50);
+    lv_obj_align(back_btn, LV_ALIGN_BOTTOM_LEFT, 30, -20);
+    THEME_STYLE_BUTTON(back_btn, THEME_BTN_CANCEL);
+    lv_obj_add_event_cb(back_btn, log_level_back_clicked, LV_EVENT_CLICKED, logs_menu_ref);
+
+    lv_obj_t *back_label = lv_label_create(back_btn);
+    lv_label_set_text(back_label, "BACK");
+    THEME_STYLE_TEXT(back_label, COLOR_TEXT_PRIMARY, FONT_BUTTON_LARGE);
+    lv_obj_center(back_label);
+
+    return screen;
+}
+
+/**
+ * CLEAR GPS TRACK SCREEN - Confirmation dialog
+ */
+static void clear_gps_back_clicked(lv_event_t *e) {
+    lv_obj_t *tools_screen = (lv_obj_t *)lv_event_get_user_data(e);
+    if (tools_screen != NULL) {
+        lv_scr_load(tools_screen);
+    }
+}
+
+static void clear_gps_confirm_clicked(lv_event_t *e) {
+    ESP_LOGI(TAG, "GPS Track cleared");
+    // TODO: Implement GPS track clearing
+    lv_obj_t *tools_screen = (lv_obj_t *)lv_event_get_user_data(e);
+    if (tools_screen != NULL) {
+        lv_scr_load(tools_screen);
+    }
+}
+
+static lv_obj_t* create_clear_gps_screen(lv_obj_t *tools_screen_ref) {
+    lv_obj_t *screen = lv_obj_create(NULL);
+    lv_obj_set_style_bg_color(screen, lv_color_hex(THEME_SCREEN_BG), 0);
+
+    // Create header
+    lv_obj_t *header = ui_header_create(screen);
+    ui_header_set_gps_status(header, false);
+
+    // Title
+    lv_obj_t *title = lv_label_create(screen);
+    lv_label_set_text(title, "CLEAR GPS TRACK");
+    THEME_STYLE_TEXT(title, THEME_TITLE_COLOR, FONT_TITLE);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, HEADER_HEIGHT + SPACING_MARGIN_SMALL);
+
+    // Warning label
+    lv_obj_t *warning_label = lv_label_create(screen);
+    lv_label_set_text(warning_label, "This will clear all GPS tracking data.\n\n"
+                                      "This action cannot be undone.\n\n"
+                                      "Continue?");
+    lv_obj_set_style_text_color(warning_label, lv_color_hex(0xFFCC00), 0);
+    lv_obj_set_style_text_font(warning_label, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_align(warning_label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_align(warning_label, LV_ALIGN_CENTER, 0, -20);
+
+    // Confirm button
+    lv_obj_t *confirm_btn = lv_btn_create(screen);
+    lv_obj_set_size(confirm_btn, 150, 50);
+    lv_obj_align(confirm_btn, LV_ALIGN_BOTTOM_RIGHT, -30, -20);
+    lv_obj_set_style_bg_color(confirm_btn, lv_color_hex(0xFF3333), 0);
+    lv_obj_add_event_cb(confirm_btn, clear_gps_confirm_clicked, LV_EVENT_CLICKED, tools_screen_ref);
+
+    lv_obj_t *confirm_label = lv_label_create(confirm_btn);
+    lv_label_set_text(confirm_label, "CLEAR");
+    THEME_STYLE_TEXT(confirm_label, COLOR_TEXT_PRIMARY, FONT_BUTTON_LARGE);
+    lv_obj_center(confirm_label);
+
+    // Cancel button
+    lv_obj_t *cancel_btn = lv_btn_create(screen);
+    lv_obj_set_size(cancel_btn, 150, 50);
+    lv_obj_align(cancel_btn, LV_ALIGN_BOTTOM_LEFT, 30, -20);
+    THEME_STYLE_BUTTON(cancel_btn, THEME_BTN_CANCEL);
+    lv_obj_add_event_cb(cancel_btn, clear_gps_back_clicked, LV_EVENT_CLICKED, tools_screen_ref);
+
+    lv_obj_t *cancel_label = lv_label_create(cancel_btn);
+    lv_label_set_text(cancel_label, "CANCEL");
+    THEME_STYLE_TEXT(cancel_label, COLOR_TEXT_PRIMARY, FONT_BUTTON_LARGE);
+    lv_obj_center(cancel_label);
+
+    return screen;
+}
+
+/**
+ * WIFI/BLUETOOTH SCREEN - Network Configuration
+ */
+
+static void wifi_bt_back_clicked(lv_event_t *e) {
+    lv_obj_t *tools_screen = (lv_obj_t *)lv_event_get_user_data(e);
+    if (tools_screen != NULL) {
+        lv_scr_load(tools_screen);
+    }
+}
+
+static lv_obj_t* create_wifi_bluetooth_screen(lv_obj_t *tools_screen_ref) {
+    lv_obj_t *screen = lv_obj_create(NULL);
+    lv_obj_set_style_bg_color(screen, lv_color_hex(THEME_SCREEN_BG), 0);
+
+    // Create header
+    lv_obj_t *header = ui_header_create(screen);
+    ui_header_set_gps_status(header, false);
+
+    // Title
+    lv_obj_t *title = lv_label_create(screen);
+    lv_label_set_text(title, "WIFI / BLUETOOTH CONFIG");
+    THEME_STYLE_TEXT(title, THEME_TITLE_COLOR, FONT_TITLE);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, HEADER_HEIGHT + SPACING_MARGIN_SMALL);
+
+    // Info label
+    lv_obj_t *info_label = lv_label_create(screen);
+    lv_label_set_text(info_label, "WiFi/Bluetooth configuration\n"
+                                   "functionality coming soon.\n\n"
+                                   "Features:\n"
+                                   "- WiFi Network Scanning\n"
+                                   "- Adhoc Network (anchor-drag-alarm)\n"
+                                   "- Bluetooth Device Pairing");
+    lv_obj_set_style_text_color(info_label, lv_color_white(), 0);
+    lv_obj_set_style_text_font(info_label, FONT_BODY_LARGE, 0);
+    lv_obj_align(info_label, LV_ALIGN_CENTER, 0, -20);
+
+    // Back button
+    lv_obj_t *back_btn = lv_btn_create(screen);
+    lv_obj_set_size(back_btn, 150, 50);
+    lv_obj_align(back_btn, LV_ALIGN_BOTTOM_LEFT, 30, -20);
+    THEME_STYLE_BUTTON(back_btn, THEME_BTN_CANCEL);
+    lv_obj_add_event_cb(back_btn, wifi_bt_back_clicked, LV_EVENT_CLICKED, tools_screen_ref);
+
+    lv_obj_t *back_label = lv_label_create(back_btn);
+    lv_label_set_text(back_label, "BACK");
+    THEME_STYLE_TEXT(back_label, COLOR_TEXT_PRIMARY, FONT_BUTTON_LARGE);
+    lv_obj_center(back_label);
+
+    return screen;
+}
+
+/**
+ * CONFIG SCREEN - System Configuration
+ */
+
+// Global refs for config screen controls
+static lv_obj_t *cfg_boat_name_ta;
+static lv_obj_t *cfg_distance_slider;
+static lv_obj_t *cfg_distance_label;
+static lv_obj_t *cfg_units_dropdown;
+static lv_obj_t *cfg_gps_device_id_ta;
+static lv_obj_t *cfg_gps_pgn_dropdown;
+static lv_obj_t *cfg_compass_device_id_ta;
+static lv_obj_t *cfg_compass_pgn_dropdown;
+static lv_obj_t *cfg_logger_enable_cb;
+static lv_obj_t *cfg_logger_freq_ta;
+static lv_obj_t *cfg_logger_unit_dropdown;
+
+// Slider value changed callback
+static void distance_slider_changed(lv_event_t *e) {
+    lv_obj_t *slider = lv_event_get_target(e);
+    int32_t value = lv_slider_get_value(slider);
+    lv_label_set_text_fmt(cfg_distance_label, "%d", (int)value);
+}
+
+// Save to NVS callback
+static void config_save_nvs_clicked(lv_event_t *e) {
+    ESP_LOGI(TAG, "CONFIG: Save to NVS clicked");
+
+    // Get values from controls
+    const char *boat_name = lv_textarea_get_text(cfg_boat_name_ta);
+    int distance = (int)lv_slider_get_value(cfg_distance_slider);
+    uint16_t units_sel = lv_dropdown_get_selected(cfg_units_dropdown);
+    const char *gps_device_id = lv_textarea_get_text(cfg_gps_device_id_ta);
+    uint16_t gps_pgn_sel = lv_dropdown_get_selected(cfg_gps_pgn_dropdown);
+    const char *compass_device_id = lv_textarea_get_text(cfg_compass_device_id_ta);
+    uint16_t compass_pgn_sel = lv_dropdown_get_selected(cfg_compass_pgn_dropdown);
+    bool logger_enabled = lv_obj_get_state(cfg_logger_enable_cb) & LV_STATE_CHECKED;
+    const char *logger_freq = lv_textarea_get_text(cfg_logger_freq_ta);
+    uint16_t logger_unit_sel = lv_dropdown_get_selected(cfg_logger_unit_dropdown);
+
+    ESP_LOGI(TAG, "Boat Name: %s", boat_name);
+    ESP_LOGI(TAG, "Distance: %d, Units: %d", distance, units_sel);
+    ESP_LOGI(TAG, "GPS Device ID: %s, PGN sel: %d", gps_device_id, gps_pgn_sel);
+    ESP_LOGI(TAG, "Compass Device ID: %s, PGN sel: %d", compass_device_id, compass_pgn_sel);
+    ESP_LOGI(TAG, "Logger: %s, Freq: %s, Unit: %d", logger_enabled ? "ON" : "OFF", logger_freq, logger_unit_sel);
+
+    // TODO: Save to NVS
+    lv_obj_t *mbox = lv_msgbox_create(lv_scr_act(), "Saved",
+        "Configuration saved to NVS", NULL, true);
+    lv_obj_center(mbox);
+}
+
+// Load from SD callback
+static void config_load_sd_clicked(lv_event_t *e) {
+    ESP_LOGI(TAG, "CONFIG: Load from SD clicked");
+    // TODO: Load from SD card
+    lv_obj_t *mbox = lv_msgbox_create(lv_scr_act(), "Info",
+        "Load from SD functionality\ncoming soon", NULL, true);
+    lv_obj_center(mbox);
+}
+
+// Save to SD callback
+static void config_save_sd_clicked(lv_event_t *e) {
+    ESP_LOGI(TAG, "CONFIG: Save to SD clicked");
+    // TODO: Save to SD card
+    lv_obj_t *mbox = lv_msgbox_create(lv_scr_act(), "Info",
+        "Save to SD functionality\ncoming soon", NULL, true);
+    lv_obj_center(mbox);
+}
+
+// Cancel callback
+static void system_config_cancel_clicked(lv_event_t *e) {
+    ESP_LOGI(TAG, "System CONFIG: Cancel clicked");
+    lv_obj_t *tools_screen = (lv_obj_t *)lv_event_get_user_data(e);
+    if (tools_screen != NULL) {
+        lv_scr_load(tools_screen);
+    }
+}
+
+static lv_obj_t* create_system_config_screen(lv_obj_t *tools_screen_ref) {
+    lv_obj_t *screen = lv_obj_create(NULL);
+    lv_obj_set_style_bg_color(screen, lv_color_hex(THEME_SCREEN_BG), 0);
+
+    // Create header
+    lv_obj_t *header = ui_header_create(screen);
+    ui_header_set_gps_status(header, false);
+
+    // Title
+    lv_obj_t *title = lv_label_create(screen);
+    lv_label_set_text(title, "CONFIGURATION");
+    THEME_STYLE_TEXT(title, THEME_TITLE_COLOR, FONT_TITLE);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, HEADER_HEIGHT + SPACING_MARGIN_SMALL);
+
+    // Scrollable content area
+    lv_obj_t *cont = lv_obj_create(screen);
+    lv_obj_set_size(cont, 760, 260);  // Leave room for buttons at bottom
+    lv_obj_align(cont, LV_ALIGN_TOP_MID, 0, HEADER_HEIGHT + 50);
+    lv_obj_set_flex_flow(cont, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(cont, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
+    lv_obj_set_style_pad_all(cont, 10, 0);
+    lv_obj_set_style_pad_row(cont, 5, 0);
+    lv_obj_set_scroll_dir(cont, LV_DIR_VER);
+
+    // 1. Boat Name
+    lv_obj_t *boat_name_label = lv_label_create(cont);
+    lv_label_set_text(boat_name_label, "Boat Name:");
+    lv_obj_set_style_text_color(boat_name_label, lv_color_white(), 0);
+
+    cfg_boat_name_ta = lv_textarea_create(cont);
+    lv_textarea_set_one_line(cfg_boat_name_ta, true);
+    lv_textarea_set_max_length(cfg_boat_name_ta, 32);
+    lv_textarea_set_placeholder_text(cfg_boat_name_ta, "Enter boat name");
+    lv_textarea_set_text(cfg_boat_name_ta, "Anchor Drag Alarm");
+    lv_obj_set_width(cfg_boat_name_ta, 700);
+
+    // 2. Drag Distance and Units
+    lv_obj_t *distance_label_static = lv_label_create(cont);
+    lv_label_set_text(distance_label_static, "Alarm Distance:");
+    lv_obj_set_style_text_color(distance_label_static, lv_color_white(), 0);
+
+    cfg_distance_slider = lv_slider_create(cont);
+    lv_slider_set_range(cfg_distance_slider, 25, 250);
+    lv_slider_set_value(cfg_distance_slider, 50, LV_ANIM_OFF);
+    lv_obj_set_width(cfg_distance_slider, 600);
+    lv_obj_add_event_cb(cfg_distance_slider, distance_slider_changed, LV_EVENT_VALUE_CHANGED, NULL);
+
+    cfg_distance_label = lv_label_create(cont);
+    lv_label_set_text(cfg_distance_label, "50");
+    lv_obj_set_style_text_color(cfg_distance_label, lv_color_hex(THEME_TITLE_COLOR), 0);
+
+    lv_obj_t *units_label = lv_label_create(cont);
+    lv_label_set_text(units_label, "Units:");
+    lv_obj_set_style_text_color(units_label, lv_color_white(), 0);
+
+    cfg_units_dropdown = lv_dropdown_create(cont);
+    lv_dropdown_set_options(cfg_units_dropdown, "Feet\nYards\nMeters");
+    lv_dropdown_set_selected(cfg_units_dropdown, 0);  // Feet
+    lv_obj_set_width(cfg_units_dropdown, 200);
+
+    // 3. GPS Device ID and PGN
+    lv_obj_t *gps_label = lv_label_create(cont);
+    lv_label_set_text(gps_label, "GPS Device ID:");
+    lv_obj_set_style_text_color(gps_label, lv_color_white(), 0);
+
+    cfg_gps_device_id_ta = lv_textarea_create(cont);
+    lv_textarea_set_one_line(cfg_gps_device_id_ta, true);
+    lv_textarea_set_max_length(cfg_gps_device_id_ta, 3);
+    lv_textarea_set_placeholder_text(cfg_gps_device_id_ta, "0-255");
+    lv_textarea_set_text(cfg_gps_device_id_ta, "0");
+    lv_obj_set_width(cfg_gps_device_id_ta, 100);
+    lv_textarea_set_accepted_chars(cfg_gps_device_id_ta, "0123456789");
+
+    lv_obj_t *gps_pgn_label = lv_label_create(cont);
+    lv_label_set_text(gps_pgn_label, "GPS PGN:");
+    lv_obj_set_style_text_color(gps_pgn_label, lv_color_white(), 0);
+
+    cfg_gps_pgn_dropdown = lv_dropdown_create(cont);
+    lv_dropdown_set_options(cfg_gps_pgn_dropdown, "129029 (GNSS Position)\n129025 (Rapid Update)");
+    lv_dropdown_set_selected(cfg_gps_pgn_dropdown, 0);
+    lv_obj_set_width(cfg_gps_pgn_dropdown, 300);
+
+    // 4. Compass Device ID and PGN
+    lv_obj_t *compass_label = lv_label_create(cont);
+    lv_label_set_text(compass_label, "Compass Device ID:");
+    lv_obj_set_style_text_color(compass_label, lv_color_white(), 0);
+
+    cfg_compass_device_id_ta = lv_textarea_create(cont);
+    lv_textarea_set_one_line(cfg_compass_device_id_ta, true);
+    lv_textarea_set_max_length(cfg_compass_device_id_ta, 3);
+    lv_textarea_set_placeholder_text(cfg_compass_device_id_ta, "0-255");
+    lv_textarea_set_text(cfg_compass_device_id_ta, "1");
+    lv_obj_set_width(cfg_compass_device_id_ta, 100);
+    lv_textarea_set_accepted_chars(cfg_compass_device_id_ta, "0123456789");
+
+    lv_obj_t *compass_pgn_label = lv_label_create(cont);
+    lv_label_set_text(compass_pgn_label, "Compass PGN:");
+    lv_obj_set_style_text_color(compass_pgn_label, lv_color_white(), 0);
+
+    cfg_compass_pgn_dropdown = lv_dropdown_create(cont);
+    lv_dropdown_set_options(cfg_compass_pgn_dropdown, "127250 (Vessel Heading)\n127251 (Rate of Turn)");
+    lv_dropdown_set_selected(cfg_compass_pgn_dropdown, 0);
+    lv_obj_set_width(cfg_compass_pgn_dropdown, 300);
+
+    // 5. Enable Data Logger
+    cfg_logger_enable_cb = lv_checkbox_create(cont);
+    lv_checkbox_set_text(cfg_logger_enable_cb, "Enable Data Logger");
+    lv_obj_set_style_text_color(cfg_logger_enable_cb, lv_color_white(), 0);
+
+    // 6. Logger Frequency
+    lv_obj_t *freq_label = lv_label_create(cont);
+    lv_label_set_text(freq_label, "Log Frequency:");
+    lv_obj_set_style_text_color(freq_label, lv_color_white(), 0);
+
+    cfg_logger_freq_ta = lv_textarea_create(cont);
+    lv_textarea_set_one_line(cfg_logger_freq_ta, true);
+    lv_textarea_set_max_length(cfg_logger_freq_ta, 4);
+    lv_textarea_set_placeholder_text(cfg_logger_freq_ta, "1-9999");
+    lv_textarea_set_text(cfg_logger_freq_ta, "1");
+    lv_obj_set_width(cfg_logger_freq_ta, 100);
+    lv_textarea_set_accepted_chars(cfg_logger_freq_ta, "0123456789");
+
+    cfg_logger_unit_dropdown = lv_dropdown_create(cont);
+    lv_dropdown_set_options(cfg_logger_unit_dropdown, "Hz (per second)\nper minute");
+    lv_dropdown_set_selected(cfg_logger_unit_dropdown, 0);
+    lv_obj_set_width(cfg_logger_unit_dropdown, 200);
+
+    // Action buttons at bottom
+    int btn_y = HEADER_HEIGHT + 320;
+    int btn_width = 150;
+    int btn_spacing = 20;
+    int total_width = (btn_width * 4) + (btn_spacing * 3);
+    int start_x = (800 - total_width) / 2;
+
+    // Save to NVS button
+    lv_obj_t *save_nvs_btn = lv_btn_create(screen);
+    lv_obj_set_size(save_nvs_btn, btn_width, 50);
+    lv_obj_set_pos(save_nvs_btn, start_x, btn_y);
+    lv_obj_set_style_bg_color(save_nvs_btn, lv_color_hex(COLOR_SUCCESS), 0);
+    lv_obj_add_event_cb(save_nvs_btn, config_save_nvs_clicked, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_t *save_nvs_label = lv_label_create(save_nvs_btn);
+    lv_label_set_text(save_nvs_label, "SAVE");
+    THEME_STYLE_TEXT(save_nvs_label, COLOR_TEXT_PRIMARY, FONT_BUTTON_SMALL);
+    lv_obj_center(save_nvs_label);
+
+    // Load from SD button
+    lv_obj_t *load_sd_btn = lv_btn_create(screen);
+    lv_obj_set_size(load_sd_btn, btn_width, 50);
+    lv_obj_set_pos(load_sd_btn, start_x + btn_width + btn_spacing, btn_y);
+    THEME_STYLE_BUTTON(load_sd_btn, THEME_BTN_PRIMARY);
+    lv_obj_add_event_cb(load_sd_btn, config_load_sd_clicked, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_t *load_sd_label = lv_label_create(load_sd_btn);
+    lv_label_set_text(load_sd_label, "LOAD SD");
+    THEME_STYLE_TEXT(load_sd_label, COLOR_TEXT_PRIMARY, FONT_BUTTON_SMALL);
+    lv_obj_center(load_sd_label);
+
+    // Save to SD button
+    lv_obj_t *save_sd_btn = lv_btn_create(screen);
+    lv_obj_set_size(save_sd_btn, btn_width, 50);
+    lv_obj_set_pos(save_sd_btn, start_x + (btn_width + btn_spacing) * 2, btn_y);
+    THEME_STYLE_BUTTON(save_sd_btn, THEME_BTN_PRIMARY);
+    lv_obj_add_event_cb(save_sd_btn, config_save_sd_clicked, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_t *save_sd_label = lv_label_create(save_sd_btn);
+    lv_label_set_text(save_sd_label, "SAVE SD");
+    THEME_STYLE_TEXT(save_sd_label, COLOR_TEXT_PRIMARY, FONT_BUTTON_SMALL);
+    lv_obj_center(save_sd_label);
+
+    // Cancel button
+    lv_obj_t *cancel_btn = lv_btn_create(screen);
+    lv_obj_set_size(cancel_btn, btn_width, 50);
+    lv_obj_set_pos(cancel_btn, start_x + (btn_width + btn_spacing) * 3, btn_y);
+    THEME_STYLE_BUTTON(cancel_btn, THEME_BTN_CANCEL);
+    lv_obj_add_event_cb(cancel_btn, system_config_cancel_clicked, LV_EVENT_CLICKED, tools_screen_ref);
+
+    lv_obj_t *cancel_label = lv_label_create(cancel_btn);
+    lv_label_set_text(cancel_label, "CANCEL");
+    THEME_STYLE_TEXT(cancel_label, COLOR_TEXT_PRIMARY, FONT_BUTTON_SMALL);
+    lv_obj_center(cancel_label);
+
+    return screen;
+}
+
+/**
+ * SAVE CONFIG SCREEN - Save configuration to SD card
+ */
+static void save_config_back_clicked(lv_event_t *e) {
+    lv_obj_t *tools_screen = (lv_obj_t *)lv_event_get_user_data(e);
+    if (tools_screen != NULL) {
+        lv_scr_load(tools_screen);
+    }
+}
+
+static lv_obj_t* create_save_config_screen(lv_obj_t *tools_screen_ref) {
+    lv_obj_t *screen = lv_obj_create(NULL);
+    lv_obj_set_style_bg_color(screen, lv_color_hex(THEME_SCREEN_BG), 0);
+
+    // Create header
+    lv_obj_t *header = ui_header_create(screen);
+    ui_header_set_gps_status(header, false);
+
+    // Title
+    lv_obj_t *title = lv_label_create(screen);
+    lv_label_set_text(title, "SAVE CONFIG");
+    THEME_STYLE_TEXT(title, THEME_TITLE_COLOR, FONT_TITLE);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, HEADER_HEIGHT + SPACING_MARGIN_SMALL);
+
+    // Info label
+    lv_obj_t *info_label = lv_label_create(screen);
+    lv_label_set_text(info_label, "Configuration save functionality\n"
+                                   "coming soon.\n\n"
+                                   "Will save settings to SD card.");
+    lv_obj_set_style_text_color(info_label, lv_color_white(), 0);
+    lv_obj_set_style_text_font(info_label, &lv_font_montserrat_14, 0);
+    lv_obj_align(info_label, LV_ALIGN_CENTER, 0, -20);
+
+    // Back button
+    lv_obj_t *back_btn = lv_btn_create(screen);
+    lv_obj_set_size(back_btn, 150, 50);
+    lv_obj_align(back_btn, LV_ALIGN_BOTTOM_LEFT, 30, -20);
+    THEME_STYLE_BUTTON(back_btn, THEME_BTN_CANCEL);
+    lv_obj_add_event_cb(back_btn, save_config_back_clicked, LV_EVENT_CLICKED, tools_screen_ref);
+
+    lv_obj_t *back_label = lv_label_create(back_btn);
+    lv_label_set_text(back_label, "BACK");
+    THEME_STYLE_TEXT(back_label, COLOR_TEXT_PRIMARY, FONT_BUTTON_LARGE);
+    lv_obj_center(back_label);
+
+    return screen;
+}
+
+/**
+ * LOAD CONFIG SCREEN - Load configuration from SD card
+ */
+static void load_config_back_clicked(lv_event_t *e) {
+    lv_obj_t *tools_screen = (lv_obj_t *)lv_event_get_user_data(e);
+    if (tools_screen != NULL) {
+        lv_scr_load(tools_screen);
+    }
+}
+
+static lv_obj_t* create_load_config_screen(lv_obj_t *tools_screen_ref) {
+    lv_obj_t *screen = lv_obj_create(NULL);
+    lv_obj_set_style_bg_color(screen, lv_color_hex(THEME_SCREEN_BG), 0);
+
+    // Create header
+    lv_obj_t *header = ui_header_create(screen);
+    ui_header_set_gps_status(header, false);
+
+    // Title
+    lv_obj_t *title = lv_label_create(screen);
+    lv_label_set_text(title, "LOAD CONFIG");
+    THEME_STYLE_TEXT(title, THEME_TITLE_COLOR, FONT_TITLE);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, HEADER_HEIGHT + SPACING_MARGIN_SMALL);
+
+    // Info label
+    lv_obj_t *info_label = lv_label_create(screen);
+    lv_label_set_text(info_label, "Configuration load functionality\n"
+                                   "coming soon.\n\n"
+                                   "Will load settings from SD card.");
+    lv_obj_set_style_text_color(info_label, lv_color_white(), 0);
+    lv_obj_set_style_text_font(info_label, &lv_font_montserrat_14, 0);
+    lv_obj_align(info_label, LV_ALIGN_CENTER, 0, -20);
+
+    // Back button
+    lv_obj_t *back_btn = lv_btn_create(screen);
+    lv_obj_set_size(back_btn, 150, 50);
+    lv_obj_align(back_btn, LV_ALIGN_BOTTOM_LEFT, 30, -20);
+    THEME_STYLE_BUTTON(back_btn, THEME_BTN_CANCEL);
+    lv_obj_add_event_cb(back_btn, load_config_back_clicked, LV_EVENT_CLICKED, tools_screen_ref);
+
+    lv_obj_t *back_label = lv_label_create(back_btn);
+    lv_label_set_text(back_label, "BACK");
+    THEME_STYLE_TEXT(back_label, COLOR_TEXT_PRIMARY, FONT_BUTTON_LARGE);
+    lv_obj_center(back_label);
+
+    return screen;
+}
+
+/**
+ * FACTORY RESET SCREEN - Confirmation dialog
+ */
+static void factory_reset_back_clicked(lv_event_t *e) {
+    lv_obj_t *tools_screen = (lv_obj_t *)lv_event_get_user_data(e);
+    if (tools_screen != NULL) {
+        lv_scr_load(tools_screen);
+    }
+}
+
+static void factory_reset_confirm_clicked(lv_event_t *e) {
+    ESP_LOGW(TAG, "Factory reset confirmed - resetting to defaults");
+    // TODO: Implement factory reset
+    lv_obj_t *tools_screen = (lv_obj_t *)lv_event_get_user_data(e);
+    if (tools_screen != NULL) {
+        lv_scr_load(tools_screen);
+    }
+}
+
+static lv_obj_t* create_factory_reset_screen(lv_obj_t *tools_screen_ref) {
+    lv_obj_t *screen = lv_obj_create(NULL);
+    lv_obj_set_style_bg_color(screen, lv_color_hex(THEME_SCREEN_BG), 0);
+
+    // Create header
+    lv_obj_t *header = ui_header_create(screen);
+    ui_header_set_gps_status(header, false);
+
+    // Title
+    lv_obj_t *title = lv_label_create(screen);
+    lv_label_set_text(title, "FACTORY RESET");
+    THEME_STYLE_TEXT(title, THEME_TITLE_COLOR, FONT_TITLE);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, HEADER_HEIGHT + SPACING_MARGIN_SMALL);
+
+    // Warning label
+    lv_obj_t *warning_label = lv_label_create(screen);
+    lv_label_set_text(warning_label, "WARNING!\n\n"
+                                      "This will reset all settings to defaults.\n\n"
+                                      "All configuration will be lost.\n\n"
+                                      "This action cannot be undone.\n\n"
+                                      "Continue?");
+    lv_obj_set_style_text_color(warning_label, lv_color_hex(0xFF3333), 0);
+    lv_obj_set_style_text_font(warning_label, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_align(warning_label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_align(warning_label, LV_ALIGN_CENTER, 0, -20);
+
+    // Confirm button
+    lv_obj_t *confirm_btn = lv_btn_create(screen);
+    lv_obj_set_size(confirm_btn, 150, 50);
+    lv_obj_align(confirm_btn, LV_ALIGN_BOTTOM_RIGHT, -30, -20);
+    lv_obj_set_style_bg_color(confirm_btn, lv_color_hex(0xFF0000), 0);
+    lv_obj_add_event_cb(confirm_btn, factory_reset_confirm_clicked, LV_EVENT_CLICKED, tools_screen_ref);
+
+    lv_obj_t *confirm_label = lv_label_create(confirm_btn);
+    lv_label_set_text(confirm_label, "RESET");
+    THEME_STYLE_TEXT(confirm_label, COLOR_TEXT_PRIMARY, FONT_BUTTON_LARGE);
+    lv_obj_center(confirm_label);
+
+    // Cancel button
+    lv_obj_t *cancel_btn = lv_btn_create(screen);
+    lv_obj_set_size(cancel_btn, 150, 50);
+    lv_obj_align(cancel_btn, LV_ALIGN_BOTTOM_LEFT, 30, -20);
+    THEME_STYLE_BUTTON(cancel_btn, THEME_BTN_CANCEL);
+    lv_obj_add_event_cb(cancel_btn, factory_reset_back_clicked, LV_EVENT_CLICKED, tools_screen_ref);
+
+    lv_obj_t *cancel_label = lv_label_create(cancel_btn);
+    lv_label_set_text(cancel_label, "CANCEL");
+    THEME_STYLE_TEXT(cancel_label, COLOR_TEXT_PRIMARY, FONT_BUTTON_LARGE);
+    lv_obj_center(cancel_label);
+
+    return screen;
 }
 
 /**
@@ -798,12 +1871,12 @@ lv_obj_t* create_tools_screen(ui_footer_page_cb_t page_callback, lv_obj_t **foot
     // Define all tool buttons (add/remove buttons here and layout adjusts automatically)
     tool_button_t buttons[] = {
         {"TF Card", tools_tfcard_clicked},
-        {"View\nLogs", tools_logs_clicked},
+        {"Logs", tools_logs_clicked},
         {"Clear\nGPS Track", tools_clear_clicked},
-        {"Save\nConfig", tools_save_config_clicked},
+        {"CONFIG", tools_config_clicked},
+        {"WiFi/BT", tools_wifi_bt_clicked},
         {"System\nInfo", tools_sysinfo_clicked},
         {"Test\nHardware", tools_test_clicked},
-        {"Load\nConfig", tools_load_config_clicked},
         {"Factory\nReset", tools_reset_clicked},
         {"Date/Time\nSettings", tools_datetime_clicked},
     };

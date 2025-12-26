@@ -186,9 +186,9 @@ void ui_header_set_compass_status(lv_obj_t *header, bool found) {
     if (data == NULL || data->right_icons[0] == NULL) return;
 
     if (found) {
-        // Compass found - show blue icon
-        lv_obj_set_style_bg_color(data->right_icons[0], lv_color_hex(0x0080FF), 0);  // Blue
-        lv_obj_set_style_border_color(data->right_icons[0], lv_color_hex(0x0060CC), 0);
+        // Compass found - show green icon
+        lv_obj_set_style_bg_color(data->right_icons[0], lv_color_hex(0x00AA00), 0);  // Green
+        lv_obj_set_style_border_color(data->right_icons[0], lv_color_hex(0x008800), 0);
         ESP_LOGD(TAG, "Compass status: FOUND");
     } else {
         // Compass not found - show gray icon
@@ -252,9 +252,9 @@ void ui_header_set_wifi_status(lv_obj_t *header, bool connected) {
     if (data == NULL || data->left_icons[1] == NULL) return;
 
     if (connected) {
-        // WiFi connected - show blue icon
-        lv_obj_set_style_bg_color(data->left_icons[1], lv_color_hex(0x0080FF), 0);  // Blue
-        lv_obj_set_style_border_color(data->left_icons[1], lv_color_hex(0x0060CC), 0);
+        // WiFi connected - show green icon
+        lv_obj_set_style_bg_color(data->left_icons[1], lv_color_hex(0x00AA00), 0);  // Green
+        lv_obj_set_style_border_color(data->left_icons[1], lv_color_hex(0x008800), 0);
         ESP_LOGD(TAG, "WiFi status: CONNECTED");
     } else {
         // WiFi disconnected - show gray icon
@@ -304,6 +304,15 @@ bool ui_header_set_time(lv_obj_t *header, int hour, int min, int sec) {
     }
 
     // Update time label with HH:MM:SS format
-    lv_label_set_text_fmt(data->time_label, "%02d:%02d:%02d", hour, min, sec);
+    // Use snprintf instead of lv_label_set_text_fmt to avoid visual artifacts
+    char time_str[16];
+    snprintf(time_str, sizeof(time_str), "%02d:%02d:%02d", hour, min, sec);
+
+    // Only update if the text has changed to prevent unnecessary redraws and blinking
+    const char *current_text = lv_label_get_text(data->time_label);
+    if (current_text == NULL || strcmp(current_text, time_str) != 0) {
+        lv_label_set_text(data->time_label, time_str);
+    }
+
     return true;
 }
