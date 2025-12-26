@@ -68,24 +68,27 @@ All screens (except SPLASH) feature a consistent full-width header bar (800×80p
 | FONT_BUTTON_SMALL | Orbitron Variable | 16 | Small buttons, tool buttons | TOOLS (9 buttons), navigation buttons |
 | FONT_BODY_LARGE | Orbitron Variable | 20 | Large body text, important info | System Info, warnings, important labels |
 | FONT_BODY_NORMAL | Orbitron Variable | 16 | Normal body text, labels | General text, form labels, descriptions |
-| FONT_BODY_SMALL | Montserrat | 14 | Small body text (minimum size) | Fine print, secondary information |
+| FONT_BODY_SMALL | Orbitron Variable | 16 | Small body text | Fine print, secondary information |
 | FONT_LABEL | Orbitron Variable | 16 | Input labels, field labels | Form labels, configuration options |
 | FONT_FOOTER | Orbitron Variable | 16 | Footer navigation buttons | Global footer on all screens |
 
 **Font Consolidation Analysis:**
 
 **Current Font Sizes in Use:**
-- **24pt:** Titles only
+- **24pt:** Titles only (1 definition)
 - **20pt:** Subtitles, Large buttons, Large body text (3 definitions using same size)
-- **16pt:** Small buttons, Normal body text, Labels, Footer (4 definitions using same size)
-- **14pt:** Small body text only (Montserrat, not Orbitron)
+- **16pt:** Small buttons, Normal body text, Small body text, Labels, Footer (5 definitions using same size)
 
-**Potential Consolidation:**
-- ✅ **20pt fonts** - Used by FONT_SUBTITLE, FONT_BUTTON_LARGE, FONT_BODY_LARGE (can remain separate for semantic clarity)
-- ✅ **16pt fonts** - Used by FONT_BUTTON_SMALL, FONT_BODY_NORMAL, FONT_LABEL, FONT_FOOTER (can remain separate for semantic clarity)
-- ⚠️ **14pt font** - Only used for FONT_BODY_SMALL with Montserrat (different font family)
+**Font Families in Use:**
+- ✅ **Orbitron Variable:** 100% of all text (all 9 font definitions)
+- ❌ **Montserrat:** Removed - no longer used
 
-**Recommendation:** Keep current font definitions for semantic clarity in code. All use only 3 actual font sizes (24pt, 20pt, 16pt Orbitron + 14pt Montserrat), which is optimal for UI consistency.
+**Consolidation:**
+- ✅ **Fully consolidated to Orbitron** - Entire UI uses single font family for consistency
+- ✅ **Only 3 actual font sizes** - 24pt, 20pt, 16pt (optimal for performance and visual hierarchy)
+- ✅ **Semantic definitions maintained** - 9 definitions provide code clarity while using only 3 actual fonts
+
+**Result:** Optimal font usage - minimal font files loaded, maximum UI consistency, semantic code clarity preserved.
 
 ---
 

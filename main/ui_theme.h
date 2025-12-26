@@ -62,6 +62,7 @@ LV_FONT_DECLARE(apple_symbols_32);
 #define FONT_BUTTON_SMALL   &orbitron_variablefont_wght_16   // Small buttons
 #define FONT_BODY_LARGE     &orbitron_variablefont_wght_20   // Body text (large)
 #define FONT_BODY_NORMAL    &orbitron_variablefont_wght_16   // Body text (normal)
+#define FONT_BODY_SMALL     &orbitron_variablefont_wght_16   // Body text (small) - 16pt Orbitron
 #define FONT_LABEL          &orbitron_variablefont_wght_16   // Labels
 #define FONT_FOOTER         &orbitron_variablefont_wght_16   // Footer buttons
 
