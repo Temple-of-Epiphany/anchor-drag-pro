@@ -1,10 +1,10 @@
 
 
-# Anchor Drag Alarm - UI Screen Guide
+The# Anchor Drag Alarm - UI Screen Guide
 
-**Version:** 1.3.0
+**Version:** 1.5.0
 **Author:** Colin Bitterfield
-**Date Updated:** 2025-12-13
+**Date Updated:** 2025-12-26
 **Hardware:** Waveshare ESP32-S3-Touch-LCD-4.3B (800×480 IPS display)
 **UI Framework:** LVGL 9.2.0
 **Configuration Storage:** ESP32 NVS (Non-Volatile Storage)
@@ -13,11 +13,79 @@
 
 ## Table of Contents
 
-1. [Screen Navigation Flow](#screen-navigation-flow)
-2. [Screen Index](#screen-index)
-3. [Screen Details](#screen-details)
-4. [Color Scheme](#color-scheme)
-5. [Operating Modes](#operating-modes)
+1. [Global Header Bar](#global-header-bar)
+2. [Screen Navigation Flow](#screen-navigation-flow)
+3. [Screen Index](#screen-index)
+4. [Screen Details](#screen-details)
+5. [Color Scheme](#color-scheme)
+6. [Operating Modes](#operating-modes)
+
+---
+
+## Global Header Bar
+
+All screens (except SPLASH) feature a consistent full-width header bar (800×80px) with:
+
+**Center:**
+- "ANCHOR DRAG ALARM" title
+- Current time display (HH:MM:SS) updated every second from RTC
+
+**Header Icons Reference:**
+
+| Position | Side  | Icon | Symbol | Disconnected Color | Connected Color | Status Meaning |
+|----------|-------|------|--------|-------------------|-----------------|----------------|
+| 0 | Left | Bluetooth | LV_SYMBOL_BLUETOOTH | Gray (#808080) | Blue (#0080FF) | Bluetooth paired/connected |
+| 1 | Left | WiFi | LV_SYMBOL_WIFI | Gray (#808080) | Green (#00AA00) | WiFi network connected |
+| 2 | Left | TF Card | LV_SYMBOL_SD_CARD | Gray (#808080) | Green (#00AA00) | SD card detected/mounted |
+| 0 | Right | Compass | LV_SYMBOL_DIRECTORY | Gray (#808080) | Green (#00AA00) | Compass data available |
+| 1 | Right | GPS | 🛰️ (satellite) | Gray (#808080) | Green (#00AA00) | GPS fix acquired |
+| 2 | Right | Anchor | ⚓ (anchor) | Gray (#808080) | Green (#00AA00) | Anchor monitoring armed |
+
+**Icon Specifications:**
+- **Shape:** Circular (50×50px)
+- **Border:** 2px, color matches background
+- **Glow:** Background color serves as status indicator
+- **Default State:** Gray (#808080) when inactive/disconnected
+- **Active State:** Green (#00AA00) for most icons, Blue (#0080FF) for Bluetooth only
+
+**Time Display:**
+- Updated automatically every second
+- Synchronized with RTC (PCF85063A)
+- Shows local time (UTC + timezone offset)
+- Format: HH:MM:SS (24-hour)
+
+---
+
+## Font Usage Reference
+
+**Font Definitions (ui_theme.h):**
+
+| Definition | Font | Size (pt) | Usage | Screens Using |
+|------------|------|-----------|-------|---------------|
+| FONT_TITLE | Orbitron Variable | 24 | Screen titles | All main screens (START, INFO, PGN, CONFIG, etc.) |
+| FONT_SUBTITLE | Orbitron Variable | 20 | Subtitles, section headers | START, INFO, CONFIG screens |
+| FONT_BUTTON_LARGE | Orbitron Variable | 20 | Large action buttons | START (mode buttons), CONFIG (action buttons) |
+| FONT_BUTTON_SMALL | Orbitron Variable | 16 | Small buttons, tool buttons | TOOLS (9 buttons), navigation buttons |
+| FONT_BODY_LARGE | Orbitron Variable | 20 | Large body text, important info | System Info, warnings, important labels |
+| FONT_BODY_NORMAL | Orbitron Variable | 16 | Normal body text, labels | General text, form labels, descriptions |
+| FONT_BODY_SMALL | Montserrat | 14 | Small body text (minimum size) | Fine print, secondary information |
+| FONT_LABEL | Orbitron Variable | 16 | Input labels, field labels | Form labels, configuration options |
+| FONT_FOOTER | Orbitron Variable | 16 | Footer navigation buttons | Global footer on all screens |
+
+**Font Consolidation Analysis:**
+
+**Current Font Sizes in Use:**
+- **24pt:** Titles only
+- **20pt:** Subtitles, Large buttons, Large body text (3 definitions using same size)
+- **16pt:** Small buttons, Normal body text, Labels, Footer (4 definitions using same size)
+- **14pt:** Small body text only (Montserrat, not Orbitron)
+
+**Potential Consolidation:**
+- ✅ **20pt fonts** - Used by FONT_SUBTITLE, FONT_BUTTON_LARGE, FONT_BODY_LARGE (can remain separate for semantic clarity)
+- ✅ **16pt fonts** - Used by FONT_BUTTON_SMALL, FONT_BODY_NORMAL, FONT_LABEL, FONT_FOOTER (can remain separate for semantic clarity)
+- ⚠️ **14pt font** - Only used for FONT_BODY_SMALL with Montserrat (different font family)
+
+**Recommendation:** Keep current font definitions for semantic clarity in code. All use only 3 actual font sizes (24pt, 20pt, 16pt Orbitron + 14pt Montserrat), which is optimal for UI consistency.
 
 ---
 
@@ -752,16 +820,16 @@ Distance: 35 ft
 **Page Indicator:** ▶ ▶ ▶ ▶ ▶ ▶
 
 **Content:**
-- **8 Tool Buttons (4×2 grid):**
-  1. **Format TF Card** - Format SD card
-  2. **View Logs** - Browse system logs
-  3. **Clear GPS Tracks** - Delete GPS history
-  4. **Save Config** - Write config to TF card (backup)
-  5. **System Info** - View diagnostics
-  6. **Test Hardware** - Hardware test mode
-  7. **Load Config** - Read config from TF card (restore)
+- **9 Tool Buttons (3×3 grid):**
+  1. **TF Card** - Format SD card
+  2. **Logs** - Browse/clear logs and set log level (opens sub-menu)
+  3. **Clear GPS Track** - Delete GPS history
+  4. **CONFIG** - System configuration (consolidated save/load)
+  5. **WiFi/BT** - WiFi and Bluetooth configuration
+  6. **System Info** - View diagnostics (firmware version, uptime, memory, etc.)
+  7. **Test Hardware** - Hardware test mode
   8. **Factory Reset** - Reset to defaults
-- **System Status Panel:** Real-time system info
+  9. **Date/Time Settings** - Configure date, time, and timezone
 
 **Layout:**
 ```
@@ -838,6 +906,622 @@ Distance: 35 ft
 - **Test Hardware:** Opens **TEST screen**
 - **Swipe Left:** Navigate to UPDATE screen
 - **BACK Button:** Return to START screen
+
+---
+
+## TOOLS Sub-Screens
+
+All tool sub-screens accessible from the TOOLS screen. Each sub-screen includes a BACK button to return to TOOLS.
+
+### 9A. TF CARD SCREEN (SD Card Management)
+
+**Purpose:** Manage SD card operations
+
+**Access:** From TOOLS screen → Click "TF Card" button
+
+**Content:**
+- **TF Card status indicator**
+- **Card information (total space, free space)**
+- **Operation buttons:**
+  - Show Contents (file browser)
+  - Format Card (with confirmation)
+  - Test FileIO (read/write test)
+- **Back button**
+
+**Layout:**
+```
+┌─────────────────────────────────────────────────────┐
+│                   TF CARD                           │
+├─────────────────────────────────────────────────────┤
+│                                                     │
+│  Status: ✓ Mounted                                 │
+│  Total: 32.0 GB  Free: 28.5 GB                     │
+│                                                     │
+│  ┌─────────────────────────────────────┐           │
+│  │     SHOW CONTENTS                   │           │
+│  └─────────────────────────────────────┘           │
+│                                                     │
+│  ┌─────────────────────────────────────┐           │
+│  │     FORMAT CARD                     │           │
+│  └─────────────────────────────────────┘           │
+│                                                     │
+│  ┌─────────────────────────────────────┐           │
+│  │     TEST FILE I/O                   │           │
+│  └─────────────────────────────────────┘           │
+│                                                     │
+│              [BACK TO TOOLS]                        │
+└─────────────────────────────────────────────────────┘
+```
+
+**File Browser (from Show Contents):**
+- Lists files and directories on SD card
+- Shows file name, size, and type
+- 10 files per page with scroll
+- Back button returns to TF Card screen
+
+**Actions:**
+- **Show Contents:** Opens file browser showing SD card contents
+- **Format Card:** Shows confirmation dialog, formats SD card, deletes all files
+- **Test FileIO:** Runs read/write speed test on SD card
+- **Back:** Return to TOOLS screen
+
+---
+
+### 9B. DATE/TIME SETTINGS SCREEN
+
+**Purpose:** Configure system date, time, and timezone
+
+**Access:** From TOOLS screen → Click "Date/Time Settings" button
+
+**Content:**
+- **Current time display (updates every second from RTC)**
+- **Manual date/time rollers (year, month, day, hour, minute, second)**
+- **Timezone selector (-12 to +14)**
+- **GPS Time Sync checkbox (true/false)**
+- **Save/Back buttons**
+
+**Layout:**
+```
+┌─────────────────────────────────────────────────────┐
+│ ⚓ ANCHOR DRAG ALARM            14:30:45            │ ← Header with clock
+├─────────────────────────────────────────────────────┤
+│              DATE/TIME SETTINGS                     │
+│                                                     │
+│  Current Time: 2025-12-26 14:30:45 (UTC-6)         │
+│                                                     │
+│  Year    Month    Day     Hour    Min     Sec      │
+│  [2025]  [Dec ]   [26]    [14]    [30]    [45]     │
+│    ▲       ▲       ▲       ▲       ▲       ▲       │
+│    ▼       ▼       ▼       ▼       ▼       ▼       │
+│                                                     │
+│  Timezone: [-6]                                     │
+│              ▲                                      │
+│              ▼                                      │
+│                                                     │
+│  [✓] GPS Time Sync                                 │
+│                                                     │
+│                                                     │
+│     [SAVE]              [BACK]                      │
+└─────────────────────────────────────────────────────┘
+```
+
+**Time/Date Logic (Implementation, not shown on screen):**
+- **RTC always stores UTC time** (PCF85063A Real-Time Clock)
+- **Display shows local time** = UTC + timezone offset
+- **Manual entry shows and sets local time**
+- **Save converts local time back to UTC** before storing in RTC
+- **GPS Sync checkbox behavior:**
+  - **If true:** Enable automatic GPS time synchronization
+    - Check GPS time every 15 minutes
+    - Auto-sync RTC if drift > 5 seconds from GPS time
+    - Fall back to RTC if GPS signal lost
+  - **If false:** Disable GPS sync, use only manual time settings
+
+**Actions:**
+- **Rollers:** Adjust date/time values (changes local time display)
+- **Timezone Roller:** Select UTC offset (-12 to +14)
+- **GPS Sync Checkbox:** Toggle automatic GPS time synchronization on/off
+- **Save:** Convert local time to UTC, store in RTC and NVS, return to TOOLS
+- **Back:** Discard changes, return to TOOLS screen
+
+---
+
+### 9C. SYSTEM INFO SCREEN
+
+**Purpose:** Display system diagnostics and hardware information
+
+**Access:** From TOOLS screen → Click "System Info" button
+
+**Content:**
+- **ESP-IDF version**
+- **Chip information (model, revision, cores)**
+- **Flash size and type**
+- **PSRAM status**
+- **Memory usage (free heap, minimum free heap, PSRAM free)**
+- **Back button**
+
+**Layout:**
+```
+┌─────────────────────────────────────────────────────┐
+│                 SYSTEM INFO                         │
+├─────────────────────────────────────────────────────┤
+│                                                     │
+│  ESP-IDF Version: v5.5                             │
+│  Chip: esp32s3 Rev 0                               │
+│  Cores: 2                                           │
+│  Flash: 16 MB embedded                             │
+│  PSRAM: Yes                                         │
+│                                                     │
+│  Free Heap: 245 KB                                  │
+│  Min Free Heap: 198 KB                             │
+│  PSRAM Free: 7854 KB                               │
+│                                                     │
+│                                                     │
+│              [BACK TO TOOLS]                        │
+└─────────────────────────────────────────────────────┘
+```
+
+**Actions:**
+- **Back:** Return to TOOLS screen
+
+---
+
+### 9D. TEST HARDWARE SCREEN
+
+**Purpose:** Hardware test utilities and diagnostics
+
+**Access:** From TOOLS screen → Click "Test Hardware" button
+
+**Content:**
+- **Placeholder for future hardware tests:**
+  - Display test pattern
+  - Touch calibration
+  - SD card read/write test
+  - GPS signal test
+  - Buzzer test
+
+**Layout:**
+```
+┌─────────────────────────────────────────────────────┐
+│              TEST HARDWARE                          │
+├─────────────────────────────────────────────────────┤
+│                                                     │
+│                                                     │
+│  Hardware test options coming soon:                 │
+│                                                     │
+│  - Display test pattern                            │
+│  - Touch calibration                               │
+│  - SD card read/write test                         │
+│  - GPS signal test                                  │
+│  - Buzzer test                                      │
+│                                                     │
+│                                                     │
+│                                                     │
+│              [BACK TO TOOLS]                        │
+└─────────────────────────────────────────────────────┘
+```
+
+**Actions:**
+- **Back:** Return to TOOLS screen
+
+---
+
+### 9E. LOGS MENU SCREEN
+
+**Purpose:** Access log viewing, clearing, and configuration
+
+**Access:** From TOOLS screen → Click "Logs" button
+
+**Content:**
+- **Three large menu buttons:**
+  1. **VIEW LOGS** - Browse system logs and GPS tracking data
+  2. **CLEAR LOGS** - Delete all logs with confirmation (red/danger button)
+  3. **SET LOG LEVEL** - Configure system log verbosity (purple/config button)
+
+**Layout:**
+```
+┌─────────────────────────────────────────────────────┐
+│                    LOGS                             │
+├─────────────────────────────────────────────────────┤
+│                                                     │
+│            ┌─────────────────┐                      │
+│            │   VIEW LOGS     │  (Blue)              │
+│            └─────────────────┘                      │
+│                                                     │
+│            ┌─────────────────┐                      │
+│            │   CLEAR LOGS    │  (Red)               │
+│            └─────────────────┘                      │
+│                                                     │
+│            ┌─────────────────┐                      │
+│            │  SET LOG LEVEL  │  (Purple)            │
+│            └─────────────────┘                      │
+│                                                     │
+│  [BACK]                                             │
+└─────────────────────────────────────────────────────┘
+```
+
+**Actions:**
+- **View Logs:** Navigate to VIEW LOGS screen
+- **Clear Logs:** Navigate to CLEAR LOGS confirmation screen
+- **Set Log Level:** Navigate to SET LOG LEVEL selection screen
+- **Back:** Return to TOOLS screen
+
+---
+
+### 9E-1. VIEW LOGS SCREEN
+
+**Purpose:** Display recent system logs and events
+
+**Access:** From LOGS MENU → Click "VIEW LOGS" button
+
+**Content:**
+- **Placeholder for log viewing functionality:**
+  - Recent system logs
+  - GPS tracking data
+  - Event history
+
+**Layout:**
+```
+┌─────────────────────────────────────────────────────┐
+│                 VIEW LOGS                           │
+├─────────────────────────────────────────────────────┤
+│                                                     │
+│                                                     │
+│  Log viewing functionality coming soon.             │
+│                                                     │
+│  Will display recent system logs                    │
+│  and GPS tracking data.                            │
+│                                                     │
+│                                                     │
+│                                                     │
+│  [BACK]                                             │
+└─────────────────────────────────────────────────────┘
+```
+
+**Actions:**
+- **Back:** Return to LOGS MENU
+
+---
+
+### 9E-2. CLEAR LOGS SCREEN
+
+**Purpose:** Delete all system logs with confirmation
+
+**Access:** From LOGS MENU → Click "CLEAR LOGS" button
+
+**Content:**
+- **Warning message about permanent deletion**
+- **CLEAR ALL LOGS button** (red/danger)
+- **BACK button**
+
+**Layout:**
+```
+┌─────────────────────────────────────────────────────┐
+│                 CLEAR LOGS                          │
+├─────────────────────────────────────────────────────┤
+│                                                     │
+│  WARNING: This will permanently delete              │
+│  all system logs and GPS track data.                │
+│                                                     │
+│  This action cannot be undone.                      │
+│                                                     │
+│                                                     │
+│            ┌──────────────────────┐                 │
+│            │  CLEAR ALL LOGS      │  (Red)          │
+│            └──────────────────────┘                 │
+│                                                     │
+│  [BACK]                                             │
+└─────────────────────────────────────────────────────┘
+```
+
+**Actions:**
+- **Clear All Logs:** Delete all logs and return to LOGS MENU
+- **Back:** Return to LOGS MENU without changes
+
+---
+
+### 9E-3. SET LOG LEVEL SCREEN
+
+**Purpose:** Configure system log verbosity
+
+**Access:** From LOGS MENU → Click "SET LOG LEVEL" button
+
+**Content:**
+- **Current log level display**
+- **Six log level buttons** (2 columns × 3 rows):
+  - **NONE** - No logging
+  - **ERROR** - Errors only
+  - **WARN** - Warnings & errors
+  - **INFO** - Informational (default)
+  - **DEBUG** - Detailed debug
+  - **VERBOSE** - Maximum detail
+- **Active level highlighted in green**
+
+**Layout:**
+```
+┌─────────────────────────────────────────────────────┐
+│               SET LOG LEVEL                         │
+├─────────────────────────────────────────────────────┤
+│                                                     │
+│         Current Level: INFO                         │
+│                                                     │
+│   ┌──────────┐              ┌──────────┐           │
+│   │   NONE   │              │   INFO   │           │
+│   │No logging│              │Informati…│ (Green)    │
+│   └──────────┘              └──────────┘           │
+│                                                     │
+│   ┌──────────┐              ┌──────────┐           │
+│   │  ERROR   │              │  DEBUG   │           │
+│   │Errors…   │              │Detailed…│            │
+│   └──────────┘              └──────────┘           │
+│                                                     │
+│   ┌──────────┐              ┌──────────┐           │
+│   │   WARN   │              │ VERBOSE  │           │
+│   │Warnings…│              │Maximum…  │            │
+│   └──────────┘              └──────────┘           │
+│                                                     │
+│  [BACK]                                             │
+└─────────────────────────────────────────────────────┘
+```
+
+**Actions:**
+- **Select Level:** Click any log level button to change system verbosity
+- **Back:** Return to LOGS MENU
+
+**Log Levels:**
+- **NONE (0):** No logging (silent)
+- **ERROR (1):** Only critical errors
+- **WARN (2):** Warnings and errors
+- **INFO (3):** General information, warnings, and errors (default)
+- **DEBUG (4):** Detailed debugging information
+- **VERBOSE (5):** Maximum detail for troubleshooting
+
+---
+
+### 9F. CLEAR GPS TRACK SCREEN
+
+**Purpose:** Delete all GPS tracking data with confirmation
+
+**Access:** From TOOLS screen → Click "Clear GPS Track" button
+
+**Content:**
+- **Warning message**
+- **Confirmation prompt**
+- **Clear/Cancel buttons**
+
+**Layout:**
+```
+┌─────────────────────────────────────────────────────┐
+│              CLEAR GPS TRACK                        │
+├─────────────────────────────────────────────────────┤
+│                                                     │
+│                                                     │
+│  This will clear all GPS tracking data.            │
+│                                                     │
+│  This action cannot be undone.                     │
+│                                                     │
+│  Continue?                                          │
+│                                                     │
+│                                                     │
+│     [CANCEL]              [CLEAR]                   │
+└─────────────────────────────────────────────────────┘
+```
+
+**Actions:**
+- **Clear:** Delete all GPS tracking data, return to TOOLS
+- **Cancel:** Return to TOOLS without changes
+
+---
+
+### 9G. SAVE CONFIG SCREEN
+
+**Purpose:** Save current configuration to SD card
+
+**Access:** From TOOLS screen → Click "Save Config" button
+
+**Content:**
+- **Information about config save functionality**
+- **Status message**
+- **Back button**
+
+**Layout:**
+```
+┌─────────────────────────────────────────────────────┐
+│                 SAVE CONFIG                         │
+├─────────────────────────────────────────────────────┤
+│                                                     │
+│                                                     │
+│  Configuration save functionality                   │
+│  coming soon.                                       │
+│                                                     │
+│  Will save settings to SD card.                     │
+│                                                     │
+│                                                     │
+│                                                     │
+│              [BACK TO TOOLS]                        │
+└─────────────────────────────────────────────────────┘
+```
+
+**Future Implementation:**
+- Reads current configuration from NVS
+- Exports to SD card as `/config.json`
+- Shows confirmation with file size
+- Status: "Config saved to SD card ✓"
+
+**Actions:**
+- **Back:** Return to TOOLS screen
+
+---
+
+### 9H. LOAD CONFIG SCREEN
+
+**Purpose:** Load configuration from SD card
+
+**Access:** From TOOLS screen → Click "Load Config" button
+
+**Content:**
+- **Information about config load functionality**
+- **Status message**
+- **Back button**
+
+**Layout:**
+```
+┌─────────────────────────────────────────────────────┐
+│                 LOAD CONFIG                         │
+├─────────────────────────────────────────────────────┤
+│                                                     │
+│                                                     │
+│  Configuration load functionality                   │
+│  coming soon.                                       │
+│                                                     │
+│  Will load settings from SD card.                   │
+│                                                     │
+│                                                     │
+│                                                     │
+│              [BACK TO TOOLS]                        │
+└─────────────────────────────────────────────────────┘
+```
+
+**Future Implementation:**
+- Reads `/config.json` from SD card
+- Validates JSON structure
+- Shows preview dialog with changes
+- User confirms before applying
+- Writes to NVS and applies immediately
+
+**Actions:**
+- **Back:** Return to TOOLS screen
+
+---
+
+### 9I. FACTORY RESET SCREEN
+
+**Purpose:** Reset all settings to factory defaults with confirmation
+
+**Access:** From TOOLS screen → Click "Factory Reset" button
+
+**Content:**
+- **Strong warning message**
+- **Confirmation prompt**
+- **Reset/Cancel buttons**
+
+**Layout:**
+```
+┌─────────────────────────────────────────────────────┐
+│              FACTORY RESET                          │
+├─────────────────────────────────────────────────────┤
+│                                                     │
+│  WARNING!                                           │
+│                                                     │
+│  This will reset all settings to defaults.          │
+│                                                     │
+│  All configuration will be lost.                    │
+│                                                     │
+│  This action cannot be undone.                     │
+│                                                     │
+│  Continue?                                          │
+│                                                     │
+│     [CANCEL]              [RESET]                   │
+└─────────────────────────────────────────────────────┘
+```
+
+**Actions:**
+- **Reset:** Clear all NVS settings, restore factory defaults, return to TOOLS
+- **Cancel:** Return to TOOLS without changes
+
+---
+
+### 9J. WIFI/BLUETOOTH CONFIG SCREEN 🆕
+
+**Purpose:** Configure WiFi networks and Bluetooth pairing
+
+**Access:** From TOOLS screen → Click "WiFi/Bluetooth Config" button (under TOOLS)
+
+**Content:**
+- **WiFi Section:**
+  - Network scanner showing available WiFi networks
+  - Option to create adhoc network "anchor-drag-alarm"
+  - Password setting for adhoc network
+  - Connect/disconnect controls
+- **Bluetooth Section:**
+  - Bluetooth enable/disable toggle
+  - Pairing menu with device discovery
+  - Paired devices list
+  - Unpair option
+
+**Layout:**
+```
+┌─────────────────────────────────────────────────────┐
+│           WIFI/BLUETOOTH CONFIG                     │
+├─────────────────────────────────────────────────────┤
+│                                                     │
+│  WIFI NETWORKS                                      │
+│  ┌─────────────────────────────────────┐           │
+│  │ ○ Home-Network-5G    [-70 dBm] 🔒  │ [Connect] │
+│  │ ○ CoffeeShop-Guest   [-82 dBm]     │ [Connect] │
+│  │ ● anchor-drag-alarm  [-45 dBm] 🔒  │ Connected │
+│  │                             [Scan]  │           │
+│  └─────────────────────────────────────┘           │
+│                                                     │
+│  CREATE ADHOC NETWORK                               │
+│  ┌─────────────────────────────────────┐           │
+│  │ SSID: anchor-drag-alarm             │           │
+│  │ Password: [**********]      [Show]  │           │
+│  │                    [Create Network] │           │
+│  └─────────────────────────────────────┘           │
+│                                                     │
+│  BLUETOOTH                                          │
+│  ┌─────────────────────────────────────┐           │
+│  │ Status: [✓] Enabled                 │           │
+│  │                                     │           │
+│  │ PAIRED DEVICES:                     │           │
+│  │  • iPhone 12          [Disconnect]  │           │
+│  │  • Garmin Chartplotter [Disconnect] │           │
+│  │                                     │           │
+│  │              [Scan for Devices]     │           │
+│  └─────────────────────────────────────┘           │
+│                                                     │
+│              [BACK TO TOOLS]                        │
+└─────────────────────────────────────────────────────┘
+```
+
+**WiFi Network Scanning:**
+- Displays list of available WiFi networks with signal strength
+- Shows security status (🔒 for secured networks)
+- Signal strength in dBm (-30 to -90 dBm range)
+- Active connection indicated with filled circle (●)
+- Scan button refreshes network list
+
+**Adhoc Network Creation:**
+- Fixed SSID: "anchor-drag-alarm"
+- User-configurable password (8-63 characters)
+- Password visibility toggle
+- Creates WPA2 secured adhoc network
+- Allows direct connection from mobile devices for monitoring
+- Network remains active until disabled or device powered off
+
+**Bluetooth Pairing:**
+- Enable/disable Bluetooth radio
+- Device discovery scan (shows nearby Bluetooth devices)
+- Pairing request with PIN confirmation
+- List of currently paired devices
+- Unpair/disconnect options for each device
+- Supports Bluetooth Classic and BLE
+
+**Security Notes:**
+- WiFi passwords stored encrypted in NVS
+- Bluetooth pairing codes use secure pairing (SSP)
+- Adhoc network password minimum 8 characters
+- Failed pairing attempts are logged
+
+**Actions:**
+- **Connect (WiFi):** Connect to selected WiFi network (prompts for password if secured)
+- **Scan (WiFi):** Refresh available networks list
+- **Create Network:** Start adhoc WiFi network with specified password
+- **Enable Bluetooth:** Turn on Bluetooth radio and make device discoverable
+- **Scan for Devices:** Search for nearby Bluetooth devices to pair
+- **Disconnect:** Disconnect from WiFi network or unpair Bluetooth device
+- **Back:** Return to TOOLS screen
 
 ---
 
@@ -1071,6 +1755,8 @@ Hardware Status Panel LEDs Update
 
 | Version | Date | Changes |
 |---------|------|---------|
+| 1.5.0 | 2025-12-26 | WiFi/Bluetooth and header enhancements:<br>• **Added 9J. WiFi/Bluetooth Config Screen** - Network scanning, adhoc network creation, Bluetooth pairing menu<br>• **WiFi Network Scanning** - Displays available networks with signal strength (dBm), security status, and connect options<br>• **Adhoc Network Creation** - Fixed SSID "anchor-drag-alarm" with user-configurable password (8-63 chars)<br>• **Bluetooth Pairing Menu** - Device discovery, paired devices list, disconnect/unpair options<br>• **Security Features** - WiFi passwords encrypted in NVS, Bluetooth SSP pairing, minimum 8-char passwords<br>• **Global Header Bar Documentation** - Added comprehensive header section to Table of Contents<br>• **Header Icon Colors Updated** - Icons now backlight with **GREEN** when connected/active (was blue)<br>• **Header Icon Status** - Green (#00AA00) for connected/active, Gray (#808080) for inactive<br>• **Time Display** - Documented automatic RTC synchronization and local time display (UTC + offset) |
+| 1.4.0 | 2025-12-26 | Tools screen expansion:<br>• **Added 9 new Tool sub-screens** accessible from TOOLS screen<br>• **9A. TF Card Screen** - SD card management with file browser, format, and test options<br>• **9B. Date/Time Settings Screen** - Complete time/timezone configuration with UTC/local time logic, GPS sync checkbox, and RTC fallback<br>• **9C. System Info Screen** - Hardware diagnostics (ESP-IDF version, chip info, flash, PSRAM, memory usage)<br>• **9D. Test Hardware Screen** - Placeholder for future hardware test utilities<br>• **9E. View Logs Screen** - Placeholder for system log viewing<br>• **9F. Clear GPS Track Screen** - GPS tracking data deletion with confirmation<br>• **9G. Save Config Screen** - Configuration backup to SD card (coming soon)<br>• **9H. Load Config Screen** - Configuration restore from SD card (coming soon)<br>• **9I. Factory Reset Screen** - Reset to defaults with strong warning confirmation<br>• **All tool screens include working BACK buttons** that return to TOOLS screen<br>• **Header clock fixed** - Uses snprintf instead of lv_label_set_text_fmt to prevent visual artifacts<br>• **Header clock updates every second on all pages** via RTC time update task in main.c |
 | 1.3.0 | 2025-12-13 | Screen restructuring:<br>• **Split DISPLAY SCREEN into two separate screens:**<br>&nbsp;&nbsp;- **Screen 3: DISPLAY SCREEN (Ready to Anchor)** - Shows main monitoring before anchor is set (READY state)<br>&nbsp;&nbsp;- **Screen 3a: DISPLAY SCREEN (Anchoring)** - Shows GPS plotting and anchor tracking (ARMING/ARMED/ALARM states)<br>• **Screen 3 (Ready to Anchor):** Large anchor button in center, connection info, waiting for user to press anchor<br>• **Screen 3a (Anchoring):** Real-time GPS plotting canvas with anchor circle, boat position, and trail dots<br>• Updated Screen Index table to show both screens<br>• Clarified state transitions and navigation between screens |
 | 1.2.0 | 2025-12-13 | UI refinements:<br>• **START Screen:** Swapped INFO and CONFIG button positions (INFO now 3rd, CONFIG now 4th)<br>• **START Screen:** Changed CONFIG button color from Blue to Purple (light purple gradient #ba68c8 → #9c27b0)<br>• **START Screen:** Enhanced all buttons with 3D styling (vertical gradients, drop shadows, border highlights, press animations)<br>• All buttons now have 15px rounded corners (increased from 12px)<br>• Added tactile press effect (shadow compresses from 8px to 3px offset when pressed) |
 | 1.1.0 | 2025-12-13 | Major updates:<br>• Changed mode from "ON" to "READY" throughout UI<br>• Added real-time GPS plotting at 2Hz on DISPLAY screen<br>• Implemented anchor circle calculation and visualization<br>• Added boat icon tracking with trail dots<br>• Fixed GPS coordinate formatting (fixed-width: lat %9.6f, lon %10.6f, sats %2d)<br>• Added ENV variable support for N2K connection (N2K_HOST, N2K_PORT, N2K_HTTP_PORT)<br>• Documented NVS (Non-Volatile Storage) configuration system<br>• Added compass rose display (upper right, or "/\|" placeholder)<br>• Added real-time clock display (bottom right)<br>• Updated DISPLAY screen to show GPS plotting phases (Initial Collection → Anchor Circle → Real-Time Tracking)<br>• Added plotting algorithm documentation (coordinate transformation, trail management, auto-scale)<br>• Updated Operating Modes section with READY mode states<br>• Added GPS trail logging (CSV format) and syslog event logging (10MB rotation)<br>• **Self-Test:** Added N2K priority detection (skip NMEA 0183/external GPS if N2K present)<br>• **TOOLS Screen:** Added config backup/restore (Save/Load Config to TF card as JSON)<br>• Expanded TOOLS grid from 6 to 8 buttons (4×2 layout)<br>• **Global Navigation Bar:** Documented consistent NAV bar across all screens with page indicators<br>• **START Screen:** Added INFO button (top right corner) for quick access to INFO screen<br>• **Bluetooth:** Added pairing code to configuration (default: "1234", stored in NVS, included in config.json)<br>• **CONFIG Screen:** Updated to include bluetooth pairing code field in System Settings |
@@ -1080,42 +1766,223 @@ Hardware Status Panel LEDs Update
 
 ## Configuration Storage (NVS)
 
-**ESP32 Non-Volatile Storage** - All configuration settings persist across power cycles:
+**ESP32 Non-Volatile Storage** - All configuration settings persist across power cycles using the ESP-IDF NVS Flash component.
 
-### Stored Settings:
-- **Alarm Settings:** Distance threshold, units (feet/yards/meters)
-- **N2K Data:** GPS PGN (129029), Compass PGN (127250), External GPS toggle
-- **Display:** Background color, font color (16-color palette or hex)
-- **System:** Boat name, WiFi credentials, Bluetooth enable/disable, Bluetooth pairing code
+### NVS Implementation Details
 
-### Storage Implementation:
-- **Library:** ESP32 Preferences (NVS wrapper)
-- **Namespace:** `anchor_alarm`
+- **Library:** ESP-IDF `nvs_flash` component
+- **Primary Namespace:** `anchor_alarm`
+- **Additional Namespaces:** `power_mgmt` (power management state)
 - **Features:**
-  - Automatic wear-leveling (flash longevity)
+  - Automatic wear-leveling (flash longevity ~100,000 write cycles)
   - Version management for future migrations
   - Factory reset capability
-  - Individual getter/setter functions
-  - Batch load/save operations
+  - Encrypted storage for sensitive data (WiFi passwords, BT pairing codes)
+- **Partition:** 24KB NVS partition at 0x9000 (see `partitions.csv`)
 
-### Usage Files:
-- `src/config_storage.h` - API declarations
-- `src/config_storage.cpp` - Implementation (#ifdef ESP32)
-- `docs/config_storage_usage.md` - Complete usage guide
+### Complete NVS Variables Table
 
-### Access Methods:
-```cpp
-// Load all settings at startup
-config_storage_t config;
-config_storage_load(&config);
+| Category | NVS Key | Type | Range/Options | Default | Description |
+|----------|---------|------|---------------|---------|-------------|
+| **SYSTEM SETTINGS** | | | | | |
+| | `boat_name` | string | 1-32 chars | "Anchor Drag Alarm" | Vessel name displayed on screens |
+| | `config_version` | uint8 | 0-255 | 1 | Config schema version for migrations |
+| | `factory_reset_count` | uint16 | 0-65535 | 0 | Number of factory resets performed |
+| **ALARM SETTINGS** | | | | | |
+| | `alarm_dist` | uint16 | 25-500 | 50 | Alarm distance threshold (feet) |
+| | `alarm_units` | uint8 | 0=ft, 1=yd, 2=m | 0 | Distance units (feet/yards/meters) |
+| | `arming_time` | uint16 | 30-600 | 60 | GPS arming duration (seconds) |
+| | `alarm_snooze_time` | uint16 | 30-600 | 300 | Alarm snooze duration (seconds) |
+| | `buzzer_vol` | uint8 | 0-100 | 80 | Buzzer volume percentage |
+| | `buzzer_pattern` | uint8 | 0-3 | 0 | 0=Continuous, 1=Pulse, 2=Triple beep, 3=SOS |
+| **GPS SETTINGS** | | | | | |
+| | `gps_source` | uint8 | 0-2 | 0 | 0=N2K priority, 1=I2C only, 2=RS485 only |
+| | `gps_sync_enabled` | bool | 0-1 | 1 | Enable GPS time sync to RTC |
+| | `gps_sync_drift_threshold` | uint8 | 1-60 | 5 | Sync if RTC drift > N seconds |
+| | `gps_log_enabled` | bool | 0-1 | 1 | Enable GPS track logging to SD |
+| | `gps_log_interval` | uint16 | 1-3600 | 5 | GPS log interval (seconds) |
+| **NMEA 2000 SETTINGS** | | | | | |
+| | `n2k_device_id` | uint8 | 0-252 | 42 | NMEA 2000 device address (0-252) |
+| | `n2k_instance` | uint8 | 0-255 | 0 | Device instance number |
+| | `n2k_manufacturer_code` | uint16 | 0-2046 | 2046 | Manufacturer code (2046=reserved) |
+| | `n2k_unique_number` | uint32 | 0-2097151 | 123456 | 21-bit unique device number |
+| | `n2k_pgn_gps` | uint32 | 0-999999 | 129029 | PGN for GPS position data |
+| | `n2k_pgn_compass` | uint32 | 0-999999 | 127250 | PGN for compass/heading |
+| | `n2k_pgn_wind` | uint32 | 0-999999 | 130306 | PGN for wind data |
+| | `n2k_pgn_depth` | uint32 | 0-999999 | 128267 | PGN for depth data |
+| | `n2k_transmit_enabled` | bool | 0-1 | 0 | Enable N2K transmission (not just receive) |
+| **NMEA 0183 SETTINGS** | | | | | |
+| | `nmea0183_enabled` | bool | 0-1 | 1 | Enable NMEA 0183 output via RS485 |
+| | `nmea0183_baud` | uint32 | 4800/38400 | 4800 | NMEA 0183 baud rate |
+| | `nmea0183_talker_id` | string | 2 chars | "GP" | Talker ID (GP=GPS, II=Integrated, AI=Alarm) |
+| **WIFI SETTINGS** | | | | | |
+| | `wifi_enabled` | bool | 0-1 | 0 | Enable WiFi (0=Off, 1=On) |
+| | `wifi_mode` | uint8 | 0-2 | 1 | 0=Off, 1=AP mode, 2=Station mode |
+| | `wifi_ap_ssid` | string | 1-32 chars | "anchor-drag-alarm" | AP mode SSID (fixed for adhoc) |
+| | `wifi_ap_password` | blob | 8-63 chars | "12345678" | AP mode password (encrypted) |
+| | `wifi_ap_channel` | uint8 | 1-13 | 6 | AP mode WiFi channel |
+| | `wifi_ap_max_conn` | uint8 | 1-4 | 4 | AP mode max simultaneous connections |
+| | `wifi_sta_ssid` | string | 1-32 chars | "" | Station mode SSID (network to join) |
+| | `wifi_sta_password` | blob | 0-63 chars | "" | Station mode password (encrypted) |
+| | `wifi_sta_auto_reconnect` | bool | 0-1 | 1 | Auto-reconnect to saved network |
+| **BLUETOOTH SETTINGS** | | | | | |
+| | `bt_enabled` | bool | 0-1 | 0 | Enable Bluetooth (0=Off, 1=On) |
+| | `bt_device_name` | string | 1-32 chars | "Anchor Drag Alarm" | Bluetooth device name |
+| | `bt_pairing_code` | blob | 4-16 chars | "1234" | Bluetooth pairing PIN (encrypted) |
+| | `bt_discoverable` | bool | 0-1 | 1 | Allow device discovery |
+| | `bt_paired_devices` | blob | JSON array | [] | List of paired device MAC addresses |
+| | `bt_auto_reconnect` | bool | 0-1 | 1 | Auto-reconnect to last paired device |
+| **DISPLAY SETTINGS - THEME** | | | | | |
+| | `theme_mode` | uint8 | 0-2 | 0 | 0=Dark (current), 1=Light, 2=Auto |
+| | `theme_auto_time_start` | uint16 | 0-1439 | 420 | Auto theme dark start (minutes since midnight, 7:00 AM) |
+| | `theme_auto_time_end` | uint16 | 0-1439 | 1140 | Auto theme dark end (minutes since midnight, 7:00 PM) |
+| **DISPLAY SETTINGS - COLORS** | | | | | |
+| | `color_bg_screen` | uint32 | 24-bit RGB | 0x001F3F | Main screen background (dark navy) |
+| | `color_primary` | uint32 | 24-bit RGB | 0x0074D9 | Primary accent color (marine blue) |
+| | `color_primary_light` | uint32 | 24-bit RGB | 0x39CCCC | Titles/highlights (teal) |
+| | `color_success` | uint32 | 24-bit RGB | 0x2ECC40 | Success/ready/armed (green) |
+| | `color_warning` | uint32 | 24-bit RGB | 0xFFDC00 | Warning/caution (yellow) |
+| | `color_danger` | uint32 | 24-bit RGB | 0xFF4136 | Alarm/error (red) |
+| | `color_text_primary` | uint32 | 24-bit RGB | 0xFFFFFF | Primary text (white) |
+| | `color_text_secondary` | uint32 | 24-bit RGB | 0xCCCCCC | Secondary text (light gray) |
+| **DISPLAY SETTINGS - FONTS** | | | | | |
+| | `font_family` | uint8 | 0-3 | 0 | 0=Orbitron, 1=Poppins, 2=GolosText, 3=SF Pro Rounded |
+| | `font_size_title` | uint8 | 0-5 | 3 | Title font size: 0=14pt, 1=16pt, 2=20pt, 3=24pt, 4=32pt, 5=48pt |
+| | `font_size_subtitle` | uint8 | 0-5 | 2 | Subtitle font size (same scale) |
+| | `font_size_button` | uint8 | 0-5 | 2 | Button font size (same scale) |
+| | `font_size_body` | uint8 | 0-5 | 1 | Body text font size (same scale) |
+| **DISPLAY SETTINGS - BRIGHTNESS** | | | | | |
+| | `brightness` | uint8 | 0-100 | 80 | LCD backlight brightness (%) |
+| | `brightness_auto` | bool | 0-1 | 0 | Auto-brightness based on time |
+| | `brightness_night` | uint8 | 0-100 | 20 | Night mode brightness (%) |
+| | `brightness_night_start` | uint16 | 0-1439 | 1260 | Night mode start (minutes, 9:00 PM) |
+| | `brightness_night_end` | uint16 | 0-1439 | 360 | Night mode end (minutes, 6:00 AM) |
+| | `screen_timeout` | uint16 | 0-3600 | 0 | Screen auto-off timeout (seconds, 0=never) |
+| **DATE/TIME SETTINGS** | | | | | |
+| | `timezone_offset` | int8 | -12 to +14 | 0 | Timezone offset from UTC (hours) |
+| | `dst_enabled` | bool | 0-1 | 0 | Enable Daylight Saving Time |
+| | `dst_start_month` | uint8 | 1-12 | 3 | DST start month (March) |
+| | `dst_end_month` | uint8 | 1-12 | 11 | DST end month (November) |
+| | `time_format_24h` | bool | 0-1 | 1 | Time format: 0=12-hour, 1=24-hour |
+| **POWER MANAGEMENT** | | | | | |
+| | `power_save_enabled` | bool | 0-1 | 0 | Enable power save mode |
+| | `power_save_timeout` | uint16 | 60-3600 | 300 | Idle time before sleep (seconds) |
+| | `sleep_time` | int64 | timestamp | 0 | Last sleep timestamp (power_mgmt namespace) |
+| **LOGGING SETTINGS** | | | | | |
+| | `log_level` | uint8 | 0-5 | 3 | 0=None, 1=Error, 2=Warn, 3=Info, 4=Debug, 5=Verbose |
+| | `log_to_sd` | bool | 0-1 | 1 | Enable logging to SD card |
+| | `log_max_size` | uint32 | 1024-10485760 | 10485760 | Max log file size (bytes, default 10MB) |
+| | `log_rotation` | bool | 0-1 | 1 | Enable log file rotation |
 
-// Individual value access
-uint16_t alarm_dist = config_get_alarm_distance();
-config_set_boat_name("Sea Breeze");
+### Total NVS Variables: 79
 
-// Save changes
-config_storage_save(&config);
+**Categories Breakdown:**
+- System: 3 variables
+- Alarm: 6 variables
+- GPS: 5 variables
+- NMEA 2000: 9 variables
+- NMEA 0183: 3 variables
+- WiFi: 9 variables
+- Bluetooth: 6 variables
+- Theme: 3 variables
+- Colors: 8 variables
+- Fonts: 5 variables
+- Brightness: 6 variables
+- Date/Time: 5 variables
+- Power: 3 variables
+- Logging: 4 variables
+
+### Font Configuration Details
+
+**Available Font Families (4):**
+1. **Orbitron** - Futuristic/technical, current default
+2. **Poppins** - Clean and readable
+3. **GolosText** - Geometric with excellent readability
+4. **SF Pro Rounded** - Apple's rounded system font
+
+**Font Sizes (6 available):**
+- 0 = 14pt (Minimum - small body text, uses LVGL Montserrat)
+- 1 = 16pt (Small - labels, body text)
+- 2 = 20pt (Medium - buttons, subtitles)
+- 3 = 24pt (Large - titles)
+- 4 = 32pt (Extra large)
+- 5 = 48pt (Huge - special emphasis)
+
+**Current Font Assignments:**
+- Title: Orbitron 24pt
+- Subtitle: Orbitron 20pt
+- Buttons: Orbitron 20pt (large), 16pt (small)
+- Body: Orbitron 20pt (large), 16pt (normal), 14pt (small)
+
+### Theme Modes
+
+**Dark Theme (Current Default):**
+- Background: Dark Navy (#001F3F)
+- Text: White (#FFFFFF)
+- Accents: Marine Blue (#0074D9), Teal (#39CCCC)
+- Optimized for night operation on water
+
+**Light Theme (Future):**
+- Background: Light Gray (#F5F5F5)
+- Text: Dark Gray (#333333)
+- Accents: Bright Blue (#0080FF), Cyan (#00D4FF)
+- Optimized for bright daylight conditions
+
+**Auto Theme:**
+- Switches between Dark/Light based on time of day
+- Configurable transition times (default: 7 AM - 7 PM light, rest dark)
+- Smooth color transitions during switch
+
+### NVS Access Example (C)
+
+```c
+#include "nvs_flash.h"
+#include "nvs.h"
+#include "board_config.h"
+
+// Initialize NVS
+esp_err_t err = nvs_flash_init();
+if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+    nvs_flash_erase();
+    err = nvs_flash_init();
+}
+
+// Open NVS handle
+nvs_handle_t nvs_handle;
+err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs_handle);
+
+// Read settings
+uint16_t alarm_distance = 50;  // default
+nvs_get_u16(nvs_handle, NVS_KEY_ALARM_DISTANCE, &alarm_distance);
+
+char boat_name[33] = "Anchor Drag Alarm";
+size_t name_len = sizeof(boat_name);
+nvs_get_str(nvs_handle, "boat_name", boat_name, &name_len);
+
+uint8_t theme_mode = 0;  // default dark
+nvs_get_u8(nvs_handle, "theme_mode", &theme_mode);
+
+// Write settings
+nvs_set_u16(nvs_handle, NVS_KEY_ALARM_DISTANCE, 75);
+nvs_set_str(nvs_handle, "boat_name", "Sea Breeze");
+nvs_set_u8(nvs_handle, "theme_mode", 2);  // auto mode
+
+// Commit changes
+nvs_commit(nvs_handle);
+
+// Close handle
+nvs_close(nvs_handle);
 ```
+
+### Factory Reset Behavior
+
+When factory reset is triggered from TOOLS screen:
+1. Erases all keys in `anchor_alarm` namespace
+2. Increments `factory_reset_count`
+3. All settings revert to defaults listed in table above
+4. WiFi/Bluetooth credentials are deleted
+5. GPS logs and paired devices are cleared
+6. System reboots to apply defaults
 
 **Default Values:**
 - Alarm Distance: 50 feet
