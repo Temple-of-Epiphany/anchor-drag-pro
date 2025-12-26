@@ -23,6 +23,7 @@ idf_component_register(SRCS "main.c"
                             "datetime_settings.c"
                             "rtc_pcf85063a.c"
                             "power_management.c"
+                            "esp_io_expander_ch422g.c"
                             "ch422g.c"
                             "sd_card.c"
                             # Custom fonts - Orbitron (futuristic/technical)

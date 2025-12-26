@@ -4,85 +4,74 @@
  * Author: Colin Bitterfield
  * Email: colin@bitterfield.com
  * Date Created: 2025-12-25
- * Version: 0.1.0
+ * Date Updated: 2025-12-26
+ * Version: 0.2.0
+ *
+ * Now uses ESP_IO_Expander library for proper abstraction
  */
 
 #include "ch422g.h"
 #include "esp_log.h"
+#include "board_config.h"
 #include <string.h>
 
 static const char *TAG = "ch422g";
-static uint8_t current_state = 0xFF;  // All pins high by default
+
+// Global CH422G expander handle
+esp_io_expander_handle_t ch422g_handle = NULL;
 
 esp_err_t ch422g_init(i2c_port_t i2c_num) {
-    ESP_LOGI(TAG, "Initializing CH422G I/O expander");
+    ESP_LOGI(TAG, "Initializing CH422G I/O expander using ESP_IO_Expander library");
 
-    // Waveshare demo sequence for SD card CS control
-    // First write 0x01 to read address 0x24
-    uint8_t write_buf = 0x01;
-    esp_err_t ret = i2c_master_write_to_device(i2c_num, 0x24, &write_buf, 1, pdMS_TO_TICKS(1000));
+    // Create CH422G IO expander instance
+    esp_err_t ret = esp_io_expander_new_i2c_ch422g(i2c_num, 0x24, &ch422g_handle);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to write to CH422G read address: %s", esp_err_to_name(ret));
+        ESP_LOGE(TAG, "Failed to create CH422G expander: %s", esp_err_to_name(ret));
         return ret;
     }
 
-    // Then write 0x0A to write address 0x38
-    // 0x0A = 0b00001010:
-    //   EXIO0 (bit 0): 0 = LOW
-    //   EXIO1 (bit 1): 1 = HIGH (Touch reset released)
-    //   EXIO2 (bit 2): 0 = LOW  (LCD backlight off initially)
-    //   EXIO3 (bit 3): 1 = HIGH (LCD reset released)
-    //   EXIO4 (bit 4): 0 = LOW  (SD card CS active/enabled)
-    //   EXIO5 (bit 5): 0 = LOW
-    write_buf = 0x0A;
-    ret = i2c_master_write_to_device(i2c_num, 0x38, &write_buf, 1, pdMS_TO_TICKS(1000));
+    // Configure all pins as outputs
+    ret = esp_io_expander_set_dir(ch422g_handle,
+                                   TP_RST | LCD_BL | LCD_RST | SD_CS | USB_SEL,
+                                   IO_EXPANDER_OUTPUT);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to write to CH422G write address: %s", esp_err_to_name(ret));
+        ESP_LOGE(TAG, "Failed to set pin directions: %s", esp_err_to_name(ret));
         return ret;
     }
 
-    current_state = 0x0A;
-    ESP_LOGI(TAG, "CH422G initialized with state: 0x%02X", current_state);
+    // Match Waveshare initialization: 0x0A = 0b00001010
+    // - EXIO0 (bit 0): 0 = LOW (reserved)
+    // - EXIO1 (bit 1): 1 = HIGH (Touch reset released)
+    // - EXIO2 (bit 2): 0 = LOW (LCD backlight OFF initially - will be turned on by display driver)
+    // - EXIO3 (bit 3): 1 = HIGH (LCD reset released)
+    // - EXIO4 (bit 4): 0 = LOW (SD CS active - ready for SD access)
+    // - EXIO5 (bit 5): 0 = LOW (USB mode, not CAN)
+
+    // Set pins HIGH: TP_RST (bit 1), LCD_RST (bit 3)
+    ret = esp_io_expander_set_level(ch422g_handle, TP_RST | LCD_RST, 1);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to set TP_RST|LCD_RST HIGH: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    // Set pins LOW: LCD_BL, SD_CS, USB_SEL (bits 2, 4, 5)
+    ret = esp_io_expander_set_level(ch422g_handle, LCD_BL | SD_CS | USB_SEL, 0);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to set LCD_BL|SD_CS|USB_SEL LOW: %s", esp_err_to_name(ret));
+        return ret;
+    }
+
+    // Verify final state
+    uint32_t final_state;
+    ret = esp_io_expander_get_level(ch422g_handle, 0x3F, &final_state);
+    if (ret == ESP_OK) {
+        ESP_LOGI(TAG, "CH422G initialized - final state: 0x%02X (expected: 0x0A)", (uint8_t)final_state);
+    }
+
+    ESP_LOGI(TAG, "CH422G initialized successfully via ESP_IO_Expander");
     return ESP_OK;
 }
 
-esp_err_t ch422g_write(i2c_port_t i2c_num, uint8_t value) {
-    // Use same API as Waveshare demo - write to address 0x38
-    esp_err_t ret = i2c_master_write_to_device(i2c_num, CH422G_ADDR_WRITE, &value, 1, pdMS_TO_TICKS(1000));
-
-    if (ret == ESP_OK) {
-        current_state = value;
-        ESP_LOGD(TAG, "CH422G write: 0x%02X", value);
-    } else {
-        ESP_LOGE(TAG, "CH422G write failed: %s", esp_err_to_name(ret));
-    }
-
-    return ret;
-}
-
-esp_err_t ch422g_set_pin(i2c_port_t i2c_num, uint8_t pin) {
-    uint8_t new_state = current_state | pin;
-    return ch422g_write(i2c_num, new_state);
-}
-
-esp_err_t ch422g_clear_pin(i2c_port_t i2c_num, uint8_t pin) {
-    uint8_t new_state = current_state & ~pin;
-    return ch422g_write(i2c_num, new_state);
-}
-
-esp_err_t ch422g_read(i2c_port_t i2c_num, uint8_t *value) {
-    if (value == NULL) {
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    // Use same API as Waveshare demo - read from address 0x24
-    esp_err_t ret = i2c_master_read_from_device(i2c_num, CH422G_ADDR_READ, value, 1, pdMS_TO_TICKS(1000));
-
-    if (ret == ESP_OK) {
-        ESP_LOGD(TAG, "CH422G read: 0x%02X", *value);
-    } else {
-        ESP_LOGE(TAG, "CH422G read failed: %s", esp_err_to_name(ret));
-    }
-
-    return ret;
+esp_io_expander_handle_t ch422g_get_handle(void) {
+    return ch422g_handle;
 }

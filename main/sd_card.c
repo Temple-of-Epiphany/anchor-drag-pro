@@ -5,17 +5,19 @@
  * Email: colin@bitterfield.com
  * Date Created: 2025-12-25
  * Date Updated: 2025-12-26
- * Version: 0.2.0
+ * Version: 0.3.0
+ *
+ * Now uses ESP_IO_Expander library for CH422G control
  */
 
 #include "sd_card.h"
 #include "board_config.h"
+#include "ch422g.h"
 #include "esp_log.h"
 #include "esp_vfs_fat.h"
 #include "sdmmc_cmd.h"
 #include "driver/sdspi_host.h"
 #include "driver/spi_common.h"
-#include "driver/i2c.h"
 #include "esp_task_wdt.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -51,29 +53,38 @@ bool sd_card_init(void) {
     esp_err_t ret;
     ESP_LOGW(TAG, "=== SD CARD INIT START ===");
 
-    // Configure CH422G for SD card (direct I2C - working approach)
-    ESP_LOGI(TAG, "Configuring CH422G for SD card access");
+    // Configure CH422G for SD card using ESP_IO_Expander library
+    ESP_LOGI(TAG, "Configuring CH422G for SD card access via ESP_IO_Expander");
 
-    uint8_t write_buf = 0x01;
-    ret = i2c_master_write_to_device(I2C_MASTER_NUM, 0x24, &write_buf, 1, pdMS_TO_TICKS(1000));
-    ESP_LOGI(TAG, "CH422G write 0x01 to 0x24: %s", esp_err_to_name(ret));
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to configure CH422G address 0x24");
+    esp_io_expander_handle_t expander = ch422g_get_handle();
+    if (expander == NULL) {
+        ESP_LOGE(TAG, "CH422G expander not initialized!");
         esp_task_wdt_add(current_task);
         return false;
     }
 
-    write_buf = 0x0A;
-    ret = i2c_master_write_to_device(I2C_MASTER_NUM, 0x38, &write_buf, 1, pdMS_TO_TICKS(1000));
-    ESP_LOGI(TAG, "CH422G write 0x0A to 0x38: %s", esp_err_to_name(ret));
+    // Read current state before modifying
+    uint32_t current_state;
+    ret = esp_io_expander_get_level(expander, 0x3F, &current_state);
+    if (ret == ESP_OK) {
+        ESP_LOGI(TAG, "CH422G state before SD access: 0x%02X", (uint8_t)current_state);
+    }
+
+    // Ensure SD_CS is LOW to enable SD card (should already be LOW from ch422g_init)
+    ret = esp_io_expander_set_level(expander, SD_CS, 0);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to configure CH422G address 0x38");
+        ESP_LOGE(TAG, "Failed to set SD CS LOW: %s", esp_err_to_name(ret));
         esp_task_wdt_add(current_task);
         return false;
     }
 
-    ESP_LOGI(TAG, "CH422G configured successfully");
-    vTaskDelay(pdMS_TO_TICKS(200));  // Allow hardware to settle
+    // Verify state after
+    ret = esp_io_expander_get_level(expander, 0x3F, &current_state);
+    if (ret == ESP_OK) {
+        ESP_LOGI(TAG, "CH422G state after SD CS set: 0x%02X (expected: 0x0A)", (uint8_t)current_state);
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(100));  // Allow hardware to settle
 
     // Mount configuration
     esp_vfs_fat_sdmmc_mount_config_t mount_config = {
@@ -169,27 +180,26 @@ bool sd_card_format(void) {
 
     esp_err_t ret;
 
-    // Configure CH422G for SD card (direct I2C)
-    ESP_LOGI(TAG, "Configuring CH422G for SD card access (format)");
+    // Configure CH422G for SD card using ESP_IO_Expander library
+    ESP_LOGI(TAG, "Configuring CH422G for SD format via ESP_IO_Expander");
 
-    uint8_t write_buf = 0x01;
-    ret = i2c_master_write_to_device(I2C_MASTER_NUM, 0x24, &write_buf, 1, pdMS_TO_TICKS(1000));
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to write to CH422G address 0x24: %s", esp_err_to_name(ret));
+    esp_io_expander_handle_t expander = ch422g_get_handle();
+    if (expander == NULL) {
+        ESP_LOGE(TAG, "CH422G expander not initialized!");
         esp_task_wdt_add(current_task);
         return false;
     }
 
-    write_buf = 0x0A;
-    ret = i2c_master_write_to_device(I2C_MASTER_NUM, 0x38, &write_buf, 1, pdMS_TO_TICKS(1000));
+    // Ensure SD_CS LOW (should already be from init)
+    ret = esp_io_expander_set_level(expander, SD_CS, 0);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to write to CH422G address 0x38: %s", esp_err_to_name(ret));
+        ESP_LOGE(TAG, "Failed to set SD CS LOW: %s", esp_err_to_name(ret));
         esp_task_wdt_add(current_task);
         return false;
     }
 
-    ESP_LOGI(TAG, "CH422G configured for SD card");
-    vTaskDelay(pdMS_TO_TICKS(200));  // Allow hardware to settle
+    ESP_LOGI(TAG, "CH422G ready for SD format");
+    vTaskDelay(pdMS_TO_TICKS(100));  // Allow hardware to settle
 
     // Mount configuration with format enabled
     esp_vfs_fat_sdmmc_mount_config_t mount_config = {
