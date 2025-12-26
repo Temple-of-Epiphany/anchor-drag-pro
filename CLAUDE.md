@@ -17,22 +17,28 @@ Anchor Drag Pro is a marine safety device for the Waveshare ESP32-S3-Touch-LCD-4
 ### Component Overview
 
 1. **ESP-IDF Firmware** (`main/`) - Production code for ESP32-S3 hardware
-   - `main.c` - Main application entry point with FreeRTOS tasks
+   - `main.c` - Main application with 6-screen navigation system
    - `CMakeLists.txt` - Component build configuration
-   - Future modules: Display, GPS, UI, CAN drivers
+   - Implemented: Display, Touch, RTC, Power Management, SD Card
+   - In Progress: CAN/NMEA 2000, GPS parsing
 
-2. **Hardware Drivers** (future `components/`)
-   - Display driver (ST7262 RGB LCD via ESP32_Display_Panel)
-   - Touch controller (GT911 via I2C)
-   - CAN bus / NMEA 2000 (TWAI driver)
-   - GPS parsing (NMEA 0183/2000)
-   - I/O expander (CH422G for backlight, reset, SD CS)
+2. **Hardware Drivers** (`main/`)
+   - `display_driver.c` - ST7262 RGB LCD driver (800×480, Mode 3 direct rendering)
+   - `touch_driver.c` - GT911 capacitive touch controller (I2C, 5-point)
+   - `ch422g.c` - CH422G I/O expander (backlight, reset, SD CS control)
+   - `sd_card.c` - SD card via SPI with FAT filesystem support
+   - `power_management.c` - Deep sleep and wake-up management
+   - `rtc_pcf85063a.c` - Real-time clock with battery backup
+   - Future: CAN/TWAI driver for NMEA 2000
 
 3. **UI Framework** (LVGL 9.2.0)
-   - Screen management and navigation
-   - Touch input handling
-   - Graphics rendering to RGB frame buffer
-   - Configuration screens
+   - `screens.c` - All 6 navigation screens (START, INFO, PGN, CONFIG, UPDATE, TOOLS)
+   - `ui_header.c` - Header with RTC time, GPS status, battery indicator
+   - `ui_footer.c` - Swipeable footer navigation bar
+   - `ui_theme.h` - Centralized Marine Blue color theme
+   - `datetime_settings.c` - RTC configuration screen
+   - Custom fonts: Orbitron, Poppins, GolosText, SF Rounded, Apple Symbols (23 fonts)
+   - Gesture support: Swipe left/right (navigate), swipe up (show footer)
 
 ### State Machine Flow
 
@@ -139,6 +145,10 @@ See `docs/ESP32-S3-Touch-LCD-4.3B-BOX-KNOWLEDGE.md` for complete pin mapping.
 │   └── CMakeLists.txt    # Component build
 ├── components/           # Custom components (future)
 ├── docs/                 # Documentation
+│   ├── ESP32_S3_HARDWARE_CONFIG.md  # **Critical** hardware config guide
+│   ├── Adding_Custom_Fonts.md
+│   ├── Font_Converter_Setup.md
+│   ├── convert_image_to_lvgl_specification.md
 │   ├── Waveshare_ESP32-S3-Touch-LCD-4.3B_Summary.md
 │   ├── ESP32-S3-Touch-LCD-4.3B-BOX-KNOWLEDGE.md
 │   ├── BOM_Anchor_Alarm.md
@@ -405,11 +415,42 @@ gh issue list --label "gps"
 3. Create git tag: `git tag -a v0.1.0 -m "Initial ESP-IDF release"`
 4. Push with tags: `git push --tags`
 
+## Hardware Configuration
+
+**📘 Complete Hardware Setup Guide:** `docs/ESP32_S3_HARDWARE_CONFIG.md`
+
+### Critical Configuration Highlights
+
+**I2C Architecture:**
+- **ALL I2C devices share ONE bus:** I2C0 on GPIO 8/9 at 400kHz
+  - CH422G I/O Expander: 0x24 (read) / 0x38 (write)
+  - GT911 Touch Controller: 0x5D
+  - PCF85063A RTC: 0x51
+
+**CH422G I/O Expander Pin Functions:**
+```
+EXIO1 = Touch Reset (Active LOW)
+EXIO2 = LCD Backlight (Active HIGH)
+EXIO3 = LCD Reset (Active HIGH)
+EXIO4 = SD Card CS (Active LOW)
+EXIO5 = USB/CAN Select (HIGH = CAN mode)
+```
+
+**SD Card Critical Requirements:**
+- ⚠️ **MUST disable watchdog before operations** (30+ second format can trigger timeout)
+- ⚠️ **MUST re-enable watchdog on ALL return paths** (success AND errors)
+- CS controlled via CH422G EXIO4, NOT direct GPIO
+
+**LVGL Display (Waveshare Mode 3):**
+- Must set `disp_drv.direct_mode = 1`
+- Wait for VSYNC in flush callback to prevent tearing
+- Task stack: 10KB minimum (increased for SD operations)
+
 ## Important Notes
 
 - **No Simulators:** This project no longer uses Python simulators. All development is on ESP32-S3 hardware.
 - **UI Reference:** Always check `docs/UI_Screens.md` for current screen specifications before implementing UI changes.
-- **Pin Conflicts:** Watch for I2C bus conflicts - I2C0 (GPIO8/9) is for external devices, I2C1 (GPIO15/7) is for touch controller.
+- **I2C Bus:** ONE shared I2C0 bus for all peripherals (GPIO 8/9) - no separate buses
 - **CAN Termination:** Only enable 120Ω termination if device is at end of NMEA 2000 backbone.
 - **Power Requirements:** Device supports 7-36V input, ideal for 12V/24V marine systems.
 - **Flash Partitions:** Ensure OTA partition is configured if implementing firmware updates.
@@ -446,5 +487,19 @@ idf.py menuconfig
 
 ---
 
-**Last Updated:** 2025-12-19
-**Project Status:** ESP-IDF migration in progress - hardware configuration next
+**Last Updated:** 2025-12-26
+**Project Status:** Core firmware functional - CAN/NMEA 2000 integration next
+**Current Version:** 0.1.1
+
+## Recent Changes (v0.1.1)
+
+- ✅ All 6 navigation screens implemented with swipeable footer
+- ✅ RTC integration with real-time display updates
+- ✅ Power management with deep sleep support
+- ✅ SD card filesystem support (SPI mode)
+- ✅ Custom fonts (23 fonts, 5 families)
+- ✅ CH422G I/O expander driver
+- ✅ Test pattern generation and display validation
+- ⚠️ **Known Issue:** SD card using direct I2C instead of ESP_IO_Expander (causes occasional reboots)
+- 🔜 **Next:** Migrate CH422G/SD to use ESP_IO_Expander library properly
+- 🔜 **Next:** CAN/TWAI driver for NMEA 2000 integration
