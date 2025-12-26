@@ -37,9 +37,9 @@ All screens (except SPLASH) feature a consistent full-width header bar (800×80p
 | 0 | Left | Bluetooth | LV_SYMBOL_BLUETOOTH | Gray (#808080) | Blue (#0080FF) | Bluetooth paired/connected |
 | 1 | Left | WiFi | LV_SYMBOL_WIFI | Gray (#808080) | Green (#00AA00) | WiFi network connected |
 | 2 | Left | TF Card | LV_SYMBOL_SD_CARD | Gray (#808080) | Green (#00AA00) | SD card detected/mounted |
-| 0 | Right | Compass | LV_SYMBOL_DIRECTORY | Gray (#808080) | Green (#00AA00) | Compass data available |
-| 1 | Right | GPS | 🛰️ (satellite) | Gray (#808080) | Green (#00AA00) | GPS fix acquired |
-| 2 | Right | Anchor | ⚓ (anchor) | Gray (#808080) | Green (#00AA00) | Anchor monitoring armed |
+| 0 | Right | Compass/Helm | ⎈ U+2388 (Apple Symbols) | Gray (#808080) | Green (#00AA00) | Compass data available |
+| 1 | Right | GPS | 🛰️ (satellite emoji) | Gray (#808080) | Green (#00AA00) | GPS fix acquired |
+| 2 | Right | Anchor | ⚓ (anchor emoji) | Gray (#808080) | Green (#00AA00) | Anchor monitoring armed |
 
 **Icon Specifications:**
 - **Shape:** Circular (50×50px)
