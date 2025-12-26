@@ -18,6 +18,7 @@
 #include "ui_header.h"
 #include "ui_theme.h"
 #include "board_config.h"
+#include "fonts/custom_fonts.h"
 #include "esp_log.h"
 #include <string.h>
 #include <stdlib.h>
@@ -139,8 +140,9 @@ lv_obj_t* ui_header_create(lv_obj_t *parent) {
     lv_obj_set_style_bg_color(data->right_icons[2], lv_color_hex(0x808080), 0);  // Gray (not armed)
     lv_obj_set_style_border_color(data->right_icons[2], lv_color_hex(0x555555), 0);
 
-    // Right icon 0 - Compass (second from right)
-    lv_label_set_text(data->icon_labels[3], LV_SYMBOL_DIRECTORY);
+    // Right icon 0 - Compass/Helm (second from right)
+    lv_label_set_text(data->icon_labels[3], "\xE2\x8E\x88");  // ⎈ Helm Symbol U+2388 (UTF-8)
+    lv_obj_set_style_text_font(data->icon_labels[3], &apple_symbols_32, 0);
     lv_obj_set_style_bg_color(data->right_icons[0], lv_color_hex(0x808080), 0);  // Gray (not found)
 
     // Right icon 1 - GPS/Satellite (rightmost)
