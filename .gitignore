@@ -24,7 +24,14 @@ sdkconfig.old
 
 # Backups
 backups/
+*.bak
+*.bak.*
 
 # Dependencies
 dependencies/
 managed_components/
+node_modules/
+package-lock.json
+
+# Lock files
+dependencies.lock
