@@ -28,6 +28,9 @@
 
 static const char *TAG = "screens";
 
+// Static storage for page callback (used for START screen button navigation)
+static ui_footer_page_cb_t g_page_callback = NULL;
+
 /**
  * Button event handlers for START screen
  */
@@ -44,18 +47,31 @@ static void btn_off_clicked(lv_event_t *e) {
 
 static void btn_ready_clicked(lv_event_t *e) {
     ESP_LOGI(TAG, "READY button clicked - Activating anchor monitoring");
-    // TODO: Set system mode to READY
-    // TODO: Navigate to DISPLAY screen
+    // Navigate to DISPLAY screen (main operating screen, no footer)
+    lv_obj_t *display_screen = create_display_screen();
+    lv_scr_load(display_screen);
 }
 
 static void btn_info_clicked(lv_event_t *e) {
     ESP_LOGI(TAG, "INFO button clicked - View GPS & Compass details");
-    // TODO: Navigate to INFO screen (could use footer navigation)
+    // Navigate to INFO screen (POSITION & NAVIGATION)
+    if (g_page_callback != NULL) {
+        lv_obj_t *info_screen = create_info_screen(g_page_callback, NULL);
+        lv_scr_load(info_screen);
+    } else {
+        ESP_LOGW(TAG, "Page callback not set, cannot navigate to INFO screen");
+    }
 }
 
 static void btn_config_clicked(lv_event_t *e) {
     ESP_LOGI(TAG, "CONFIG button clicked - Configure system settings");
-    // TODO: Navigate to CONFIG screen (could use footer navigation)
+    // Navigate to CONFIG screen
+    if (g_page_callback != NULL) {
+        lv_obj_t *config_screen = create_config_screen(g_page_callback, NULL);
+        lv_scr_load(config_screen);
+    } else {
+        ESP_LOGW(TAG, "Page callback not set, cannot navigate to CONFIG screen");
+    }
 }
 
 /**
@@ -128,6 +144,9 @@ static lv_obj_t* create_base_screen(const char *title, ui_page_t page, ui_footer
 }
 
 lv_obj_t* create_start_screen(ui_footer_page_cb_t page_callback, lv_obj_t **footer_out) {
+    // Store page callback for button navigation
+    g_page_callback = page_callback;
+
     // Create screen with Marine Blue background (per UI spec)
     lv_obj_t *screen = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(screen, lv_color_hex(THEME_START_SCREEN_BG), 0);
@@ -2025,7 +2044,7 @@ lv_obj_t* create_display_screen(void) {
 
     lv_obj_t *anchor_icon = lv_label_create(anchor_btn);
     lv_label_set_text(anchor_icon, "\xE2\x9A\x93");  // ⚓ Anchor emoji
-    THEME_STYLE_TEXT(anchor_icon, COLOR_TEXT_PRIMARY, &orbitron_variablefont_wght_48);
+    THEME_STYLE_TEXT(anchor_icon, COLOR_TEXT_PRIMARY, &orbitron_variablefont_wght_24);
     lv_obj_center(anchor_icon);
 
     lv_obj_t *anchor_text = lv_label_create(screen);
