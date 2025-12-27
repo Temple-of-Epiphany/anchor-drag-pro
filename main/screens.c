@@ -2078,13 +2078,7 @@ lv_obj_t* create_display_screen(ui_footer_page_cb_t page_callback, lv_obj_t **fo
     lv_obj_t *mode_label = lv_label_create(status_bar);
     lv_label_set_text(mode_label, "MODE: READY");
     THEME_STYLE_TEXT(mode_label, COLOR_TEXT_PRIMARY, FONT_SUBTITLE);
-    lv_obj_align(mode_label, LV_ALIGN_LEFT_MID, 20, 0);
-
-    lv_obj_t *gps_status = lv_label_create(status_bar);
-    lv_label_set_text(gps_status, "GPS: \xE2\x97\x8F");  // Green dot
-    lv_obj_set_style_text_color(gps_status, lv_color_hex(COLOR_SUCCESS), 0);
-    lv_obj_set_style_text_font(gps_status, FONT_SUBTITLE, 0);
-    lv_obj_align(gps_status, LV_ALIGN_RIGHT_MID, -20, 0);
+    lv_obj_align(mode_label, LV_ALIGN_CENTER, 0, 0);
 
     // GPS Data panel (upper left) - Reduced size
     lv_obj_t *gps_panel = lv_obj_create(screen);
@@ -2111,9 +2105,9 @@ lv_obj_t* create_display_screen(ui_footer_page_cb_t page_callback, lv_obj_t **fo
     THEME_STYLE_TEXT(compass_label, COLOR_TEXT_PRIMARY, FONT_BODY_NORMAL);
     lv_obj_center(compass_label);
 
-    // Large Anchor button/window (center) - Increased size
+    // Anchor button (center) - Smaller, screen-centered
     lv_obj_t *anchor_btn = lv_btn_create(screen);
-    lv_obj_set_size(anchor_btn, 300, 300);
+    lv_obj_set_size(anchor_btn, 200, 200);
     lv_obj_align(anchor_btn, LV_ALIGN_CENTER, 0, 0);
     THEME_STYLE_BUTTON(anchor_btn, COLOR_PRIMARY);
     lv_obj_add_event_cb(anchor_btn, display_anchor_clicked, LV_EVENT_CLICKED, NULL);
@@ -2127,12 +2121,6 @@ lv_obj_t* create_display_screen(ui_footer_page_cb_t page_callback, lv_obj_t **fo
     lv_label_set_text(anchor_text, "SET ANCHOR");
     THEME_STYLE_TEXT(anchor_text, COLOR_TEXT_PRIMARY, FONT_BODY_LARGE);
     lv_obj_align(anchor_text, LV_ALIGN_CENTER, 0, 30);
-
-    // Connection info (bottom left)
-    lv_obj_t *connection_label = lv_label_create(screen);
-    lv_label_set_text(connection_label, "N2K: Not Connected");
-    THEME_STYLE_TEXT(connection_label, COLOR_TEXT_INVERSE, FONT_LABEL);
-    lv_obj_align(connection_label, LV_ALIGN_BOTTOM_LEFT, 20, -70);
 
     // Create footer navigation bar (swipe up menu)
     lv_obj_t *footer = ui_footer_create(screen, PAGE_START, page_callback);
