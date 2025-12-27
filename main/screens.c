@@ -36,10 +36,10 @@ static ui_footer_page_cb_t g_page_callback = NULL;
  */
 static void btn_off_clicked(lv_event_t *e) {
     ESP_LOGI(TAG, "OFF button clicked - Entering deep sleep (power off)");
-    ESP_LOGI(TAG, "Device will wake on touch screen press");
+    ESP_LOGI(TAG, "Device will wake on EN/RST button press");
 
     // Enter deep sleep mode
-    // Device will wake when touch screen is pressed
+    // Device will wake when EN/RST button is pressed
     power_mgmt_sleep();
 
     // Never reaches here - device resets on wake

@@ -35,11 +35,13 @@
 #include "touch_driver.h"
 #include "lvgl_init.h"
 #include "rtc_pcf85063a.h"
+#include "ch422g.h"
 #include "tv_test_pattern.h"
 #include "ui_footer.h"
 #include "ui_header.h"
 #include "screens.h"
 #include "power_management.h"
+#include "nvs_flash.h"
 
 // External font declarations
 LV_FONT_DECLARE(orbitron_variablefont_wght_24);
@@ -414,6 +416,18 @@ void app_main(void)
     ESP_LOGI(TAG, "================================================================================");
     ESP_LOGI(TAG, "");
 
+    // Initialize NVS (Non-Volatile Storage) for settings and state persistence
+    ESP_LOGI(TAG, "Initializing NVS...");
+    ret = nvs_flash_init();
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        // NVS partition was truncated and needs to be erased
+        ESP_LOGW(TAG, "NVS partition needs to be erased, erasing...");
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        ret = nvs_flash_init();
+    }
+    ESP_ERROR_CHECK(ret);
+    ESP_LOGI(TAG, "NVS initialized successfully");
+
     // Initialize power management and check wake-up cause
     ESP_LOGI(TAG, "Initializing power management...");
     power_mgmt_init();
@@ -428,6 +442,14 @@ void app_main(void)
     // Initialize RTC (Real-Time Clock)
     ESP_LOGI(TAG, "Initializing RTC (PCF85063A)...");
     PCF85063A_Init();
+
+    // Initialize CH422G I/O Expander (controls LCD backlight, reset, SD CS, etc.)
+    ESP_LOGI(TAG, "Initializing CH422G I/O Expander...");
+    ret = ch422g_init(I2C_MASTER_NUM);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "CH422G initialization failed: %s", esp_err_to_name(ret));
+        return;
+    }
 
     // Read current time from RTC
     datetime_t rtc_time;
@@ -728,6 +750,8 @@ void app_main(void)
         // Update header time displays on all screens
         if (lvgl_lock(50)) {
             int headers_updated = 0;
+
+            // Update navigation screens (g_screens array)
             for (int i = 0; i < PAGE_COUNT; i++) {
                 if (g_screens[i] != NULL) {
                     // Find header in this screen by checking all children
@@ -747,6 +771,33 @@ void app_main(void)
                     }
                 }
             }
+
+            // Also update the currently active screen (handles tool screens not in g_screens)
+            lv_obj_t *active_screen = lv_scr_act();
+            if (active_screen != NULL) {
+                uint32_t child_count = lv_obj_get_child_cnt(active_screen);
+                for (uint32_t j = 0; j < child_count; j++) {
+                    lv_obj_t *child = lv_obj_get_child(active_screen, j);
+                    if (child != NULL) {
+                        // Try to update time - function returns true only if this is a valid header
+                        if (ui_header_set_time(child, rtc_current.hour, rtc_current.min, rtc_current.sec)) {
+                            // Don't increment counter if we already updated this screen in g_screens
+                            bool already_counted = false;
+                            for (int i = 0; i < PAGE_COUNT; i++) {
+                                if (g_screens[i] == active_screen) {
+                                    already_counted = true;
+                                    break;
+                                }
+                            }
+                            if (!already_counted) {
+                                headers_updated++;
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+
             if (update_count % 10 == 0) {
                 ESP_LOGI(TAG, "Updated %d headers", headers_updated);
             }
