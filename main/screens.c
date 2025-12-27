@@ -2040,6 +2040,23 @@ static void display_anchor_clicked(lv_event_t *e) {
 }
 
 /**
+ * Gesture handler for swipe-up to reveal footer on DISPLAY screen
+ */
+static void display_screen_gesture_cb(lv_event_t *e) {
+    lv_event_code_t code = lv_event_get_code(e);
+    if (code == LV_EVENT_GESTURE) {
+        lv_obj_t *footer = (lv_obj_t *)lv_event_get_user_data(e);
+        lv_dir_t dir = lv_indev_get_gesture_dir(lv_indev_get_act());
+
+        if (dir == LV_DIR_TOP && footer != NULL) {
+            // Swipe up detected - show footer
+            ESP_LOGI(TAG, "Swipe UP gesture detected - showing footer");
+            ui_footer_show(footer);
+        }
+    }
+}
+
+/**
  * DISPLAY SCREEN - Main Anchor Monitoring
  */
 lv_obj_t* create_display_screen(ui_footer_page_cb_t page_callback, lv_obj_t **footer_out) {
@@ -2127,7 +2144,11 @@ lv_obj_t* create_display_screen(ui_footer_page_cb_t page_callback, lv_obj_t **fo
         *footer_out = footer;
     }
 
-    ESP_LOGI(TAG, "Created DISPLAY screen (Ready to Anchor) with footer navigation");
+    // Add gesture detection to screen for swipe-up to reveal footer
+    lv_obj_add_event_cb(screen, display_screen_gesture_cb, LV_EVENT_GESTURE, footer);
+    lv_obj_clear_flag(screen, LV_OBJ_FLAG_GESTURE_BUBBLE);  // Don't bubble to prevent conflicts
+
+    ESP_LOGI(TAG, "Created DISPLAY screen (Ready to Anchor) with footer navigation and swipe-up gesture");
     return screen;
 }
 
