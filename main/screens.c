@@ -1959,19 +1959,75 @@ lv_obj_t* create_tools_screen(ui_footer_page_cb_t page_callback, lv_obj_t **foot
 /**
  * Button callbacks for DISPLAY screen
  */
-static void display_mode_clicked(lv_event_t *e) {
-    ESP_LOGI(TAG, "DISPLAY: Mode button clicked - return to START");
-    // TODO: Return to START screen
+
+// Static reference to menu panel for toggle
+static lv_obj_t *g_display_menu_panel = NULL;
+static bool g_menu_visible = false;
+
+static void display_menu_clicked(lv_event_t *e) {
+    ESP_LOGI(TAG, "DISPLAY: Menu button clicked");
+
+    if (g_display_menu_panel == NULL) {
+        // Find menu panel in screen children
+        lv_obj_t *screen = (lv_obj_t *)lv_event_get_user_data(e);
+        if (screen != NULL) {
+            // Search for menu panel (it's the last created object with specific size)
+            uint32_t child_count = lv_obj_get_child_cnt(screen);
+            for (uint32_t i = 0; i < child_count; i++) {
+                lv_obj_t *child = lv_obj_get_child(screen, i);
+                if (lv_obj_get_width(child) == 200 && lv_obj_get_height(child) == 300) {
+                    g_display_menu_panel = child;
+                    break;
+                }
+            }
+        }
+    }
+
+    if (g_display_menu_panel != NULL) {
+        if (g_menu_visible) {
+            // Hide menu - slide out
+            lv_obj_add_flag(g_display_menu_panel, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_align(g_display_menu_panel, LV_ALIGN_BOTTOM_LEFT, -210, -70);
+            g_menu_visible = false;
+            ESP_LOGI(TAG, "Menu hidden");
+        } else {
+            // Show menu - slide in
+            lv_obj_clear_flag(g_display_menu_panel, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_align(g_display_menu_panel, LV_ALIGN_BOTTOM_LEFT, 80, -70);
+            g_menu_visible = true;
+            ESP_LOGI(TAG, "Menu visible");
+        }
+    }
 }
 
 static void display_info_clicked(lv_event_t *e) {
     ESP_LOGI(TAG, "DISPLAY: Info button clicked");
+    // Hide menu first
+    if (g_display_menu_panel != NULL && g_menu_visible) {
+        lv_obj_add_flag(g_display_menu_panel, LV_OBJ_FLAG_HIDDEN);
+        g_menu_visible = false;
+    }
     // TODO: Navigate to INFO screen
 }
 
 static void display_config_clicked(lv_event_t *e) {
     ESP_LOGI(TAG, "DISPLAY: Config button clicked");
+    // Hide menu first
+    if (g_display_menu_panel != NULL && g_menu_visible) {
+        lv_obj_add_flag(g_display_menu_panel, LV_OBJ_FLAG_HIDDEN);
+        g_menu_visible = false;
+    }
     // TODO: Navigate to CONFIG screen
+}
+
+static void display_mode_clicked(lv_event_t *e) {
+    ESP_LOGI(TAG, "DISPLAY: Mode button clicked - return to START");
+    // Hide menu first
+    if (g_display_menu_panel != NULL && g_menu_visible) {
+        lv_obj_add_flag(g_display_menu_panel, LV_OBJ_FLAG_HIDDEN);
+        g_menu_visible = false;
+    }
+    // TODO: Navigate to START screen
 }
 
 static void display_anchor_clicked(lv_event_t *e) {
@@ -2009,48 +2065,47 @@ lv_obj_t* create_display_screen(void) {
     lv_obj_set_style_text_font(gps_status, FONT_SUBTITLE, 0);
     lv_obj_align(gps_status, LV_ALIGN_RIGHT_MID, -20, 0);
 
-    // GPS Data panel (upper left)
+    // GPS Data panel (upper left) - Reduced size
     lv_obj_t *gps_panel = lv_obj_create(screen);
-    lv_obj_set_size(gps_panel, 280, 140);
+    lv_obj_set_size(gps_panel, 200, 90);
     lv_obj_align(gps_panel, LV_ALIGN_TOP_LEFT, 20, 130);
     THEME_STYLE_PANEL(gps_panel, THEME_PANEL_BG);
 
     lv_obj_t *gps_data = lv_label_create(gps_panel);
     lv_label_set_text(gps_data,
         "GPS POSITION\n"
-        "Lat:  30.031355\n"
-        "Lon: -90.034512\n"
-        "Satellites: 8");
-    THEME_STYLE_TEXT(gps_data, COLOR_TEXT_PRIMARY, FONT_BODY_NORMAL);
-    lv_obj_align(gps_data, LV_ALIGN_TOP_LEFT, 10, 10);
+        "30.03°N 90.03°W\n"
+        "Sats: 8");
+    THEME_STYLE_TEXT(gps_data, COLOR_TEXT_PRIMARY, FONT_BODY_SMALL);
+    lv_obj_align(gps_data, LV_ALIGN_TOP_LEFT, 10, 5);
 
-    // Compass panel (upper right)
+    // Compass panel (upper right) - Smaller
     lv_obj_t *compass_panel = lv_obj_create(screen);
-    lv_obj_set_size(compass_panel, 140, 140);
+    lv_obj_set_size(compass_panel, 100, 90);
     lv_obj_align(compass_panel, LV_ALIGN_TOP_RIGHT, -20, 130);
     THEME_STYLE_PANEL(compass_panel, THEME_PANEL_BG);
 
     lv_obj_t *compass_label = lv_label_create(compass_panel);
-    lv_label_set_text(compass_label, "    N\n  W + E\n    S");
-    THEME_STYLE_TEXT(compass_label, COLOR_TEXT_PRIMARY, FONT_BODY_LARGE);
+    lv_label_set_text(compass_label, "  N\nW+E\n  S");
+    THEME_STYLE_TEXT(compass_label, COLOR_TEXT_PRIMARY, FONT_BODY_NORMAL);
     lv_obj_center(compass_label);
 
-    // Large Anchor button (center)
+    // Large Anchor button/window (center) - Increased size
     lv_obj_t *anchor_btn = lv_btn_create(screen);
-    lv_obj_set_size(anchor_btn, 200, 200);
-    lv_obj_align(anchor_btn, LV_ALIGN_CENTER, 0, -10);
+    lv_obj_set_size(anchor_btn, 300, 300);
+    lv_obj_align(anchor_btn, LV_ALIGN_CENTER, 0, 0);
     THEME_STYLE_BUTTON(anchor_btn, COLOR_PRIMARY);
     lv_obj_add_event_cb(anchor_btn, display_anchor_clicked, LV_EVENT_CLICKED, NULL);
 
     lv_obj_t *anchor_icon = lv_label_create(anchor_btn);
     lv_label_set_text(anchor_icon, "\xE2\x9A\x93");  // ⚓ Anchor emoji
     THEME_STYLE_TEXT(anchor_icon, COLOR_TEXT_PRIMARY, &orbitron_variablefont_wght_24);
-    lv_obj_center(anchor_icon);
+    lv_obj_align(anchor_icon, LV_ALIGN_CENTER, 0, -20);
 
-    lv_obj_t *anchor_text = lv_label_create(screen);
-    lv_label_set_text(anchor_text, "Press to set anchor location");
-    THEME_STYLE_TEXT(anchor_text, COLOR_TEXT_INVERSE, FONT_BODY_NORMAL);
-    lv_obj_align(anchor_text, LV_ALIGN_CENTER, 0, 120);
+    lv_obj_t *anchor_text = lv_label_create(anchor_btn);
+    lv_label_set_text(anchor_text, "SET ANCHOR");
+    THEME_STYLE_TEXT(anchor_text, COLOR_TEXT_PRIMARY, FONT_BODY_LARGE);
+    lv_obj_align(anchor_text, LV_ALIGN_CENTER, 0, 30);
 
     // Connection info (bottom left)
     lv_obj_t *connection_label = lv_label_create(screen);
@@ -2062,43 +2117,67 @@ lv_obj_t* create_display_screen(void) {
     lv_obj_t *time_label = lv_label_create(screen);
     lv_label_set_text(time_label, "12:34:56");
     THEME_STYLE_TEXT(time_label, COLOR_TEXT_INVERSE, FONT_BODY_LARGE);
-    lv_obj_align(time_label, LV_ALIGN_BOTTOM_RIGHT, -20, -70);
+    lv_obj_align(time_label, LV_ALIGN_BOTTOM_RIGHT, -20, -15);
 
-    // Bottom navigation buttons (no footer bar, just buttons)
-    lv_obj_t *info_btn = lv_btn_create(screen);
-    lv_obj_set_size(info_btn, 120, 50);
-    lv_obj_align(info_btn, LV_ALIGN_BOTTOM_LEFT, 20, -10);
-    THEME_STYLE_BUTTON(info_btn, COLOR_BTN_INFO);
-    lv_obj_add_event_cb(info_btn, display_info_clicked, LV_EVENT_CLICKED, NULL);
+    // Hamburger menu button (bottom left corner)
+    lv_obj_t *menu_btn = lv_btn_create(screen);
+    lv_obj_set_size(menu_btn, 60, 50);
+    lv_obj_align(menu_btn, LV_ALIGN_BOTTOM_LEFT, 10, -10);
+    THEME_STYLE_BUTTON(menu_btn, COLOR_PRIMARY);
+    lv_obj_add_event_cb(menu_btn, display_menu_clicked, LV_EVENT_CLICKED, screen);
 
-    lv_obj_t *info_btn_label = lv_label_create(info_btn);
-    lv_label_set_text(info_btn_label, "INFO");
-    THEME_STYLE_TEXT(info_btn_label, COLOR_TEXT_PRIMARY, FONT_BUTTON_SMALL);
-    lv_obj_center(info_btn_label);
+    lv_obj_t *menu_icon = lv_label_create(menu_btn);
+    lv_label_set_text(menu_icon, "\xE2\x98\xB0");  // ☰ Hamburger icon
+    THEME_STYLE_TEXT(menu_icon, COLOR_TEXT_PRIMARY, FONT_TITLE);
+    lv_obj_center(menu_icon);
 
-    lv_obj_t *config_btn = lv_btn_create(screen);
-    lv_obj_set_size(config_btn, 120, 50);
-    lv_obj_align(config_btn, LV_ALIGN_BOTTOM_MID, 0, -10);
-    THEME_STYLE_BUTTON(config_btn, COLOR_BTN_CONFIG);
-    lv_obj_add_event_cb(config_btn, display_config_clicked, LV_EVENT_CLICKED, NULL);
+    // Create slide-in menu panel (initially hidden)
+    lv_obj_t *menu_panel = lv_obj_create(screen);
+    lv_obj_set_size(menu_panel, 200, 300);
+    lv_obj_align(menu_panel, LV_ALIGN_BOTTOM_LEFT, -210, -70);  // Off-screen initially
+    lv_obj_set_style_bg_color(menu_panel, lv_color_hex(THEME_PANEL_BG_DARK), 0);
+    lv_obj_set_style_border_color(menu_panel, lv_color_hex(COLOR_BORDER), 0);
+    lv_obj_set_style_border_width(menu_panel, BORDER_WIDTH_MEDIUM, 0);
+    lv_obj_set_style_radius(menu_panel, RADIUS_MEDIUM, 0);
+    lv_obj_add_flag(menu_panel, LV_OBJ_FLAG_HIDDEN);  // Start hidden
 
-    lv_obj_t *config_btn_label = lv_label_create(config_btn);
-    lv_label_set_text(config_btn_label, "CONFIG");
-    THEME_STYLE_TEXT(config_btn_label, COLOR_TEXT_PRIMARY, FONT_BUTTON_SMALL);
-    lv_obj_center(config_btn_label);
+    // Menu item: INFO
+    lv_obj_t *menu_info_btn = lv_btn_create(menu_panel);
+    lv_obj_set_size(menu_info_btn, 180, 60);
+    lv_obj_align(menu_info_btn, LV_ALIGN_TOP_MID, 0, 10);
+    THEME_STYLE_BUTTON(menu_info_btn, COLOR_BTN_INFO);
+    lv_obj_add_event_cb(menu_info_btn, display_info_clicked, LV_EVENT_CLICKED, NULL);
 
-    lv_obj_t *mode_btn = lv_btn_create(screen);
-    lv_obj_set_size(mode_btn, 120, 50);
-    lv_obj_align(mode_btn, LV_ALIGN_BOTTOM_RIGHT, -20, -10);
-    THEME_STYLE_BUTTON(mode_btn, COLOR_BTN_OFF);
-    lv_obj_add_event_cb(mode_btn, display_mode_clicked, LV_EVENT_CLICKED, NULL);
+    lv_obj_t *menu_info_label = lv_label_create(menu_info_btn);
+    lv_label_set_text(menu_info_label, "INFO");
+    THEME_STYLE_TEXT(menu_info_label, COLOR_TEXT_PRIMARY, FONT_BUTTON_LARGE);
+    lv_obj_center(menu_info_label);
 
-    lv_obj_t *mode_btn_label = lv_label_create(mode_btn);
-    lv_label_set_text(mode_btn_label, "MODE");
-    THEME_STYLE_TEXT(mode_btn_label, COLOR_TEXT_PRIMARY, FONT_BUTTON_SMALL);
-    lv_obj_center(mode_btn_label);
+    // Menu item: CONFIG
+    lv_obj_t *menu_config_btn = lv_btn_create(menu_panel);
+    lv_obj_set_size(menu_config_btn, 180, 60);
+    lv_obj_align(menu_config_btn, LV_ALIGN_TOP_MID, 0, 80);
+    THEME_STYLE_BUTTON(menu_config_btn, COLOR_BTN_CONFIG);
+    lv_obj_add_event_cb(menu_config_btn, display_config_clicked, LV_EVENT_CLICKED, NULL);
 
-    ESP_LOGI(TAG, "Created DISPLAY screen (Ready to Anchor)");
+    lv_obj_t *menu_config_label = lv_label_create(menu_config_btn);
+    lv_label_set_text(menu_config_label, "CONFIG");
+    THEME_STYLE_TEXT(menu_config_label, COLOR_TEXT_PRIMARY, FONT_BUTTON_LARGE);
+    lv_obj_center(menu_config_label);
+
+    // Menu item: MODE (back to START)
+    lv_obj_t *menu_mode_btn = lv_btn_create(menu_panel);
+    lv_obj_set_size(menu_mode_btn, 180, 60);
+    lv_obj_align(menu_mode_btn, LV_ALIGN_TOP_MID, 0, 150);
+    THEME_STYLE_BUTTON(menu_mode_btn, COLOR_BTN_OFF);
+    lv_obj_add_event_cb(menu_mode_btn, display_mode_clicked, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_t *menu_mode_label = lv_label_create(menu_mode_btn);
+    lv_label_set_text(menu_mode_label, "MODE");
+    THEME_STYLE_TEXT(menu_mode_label, COLOR_TEXT_PRIMARY, FONT_BUTTON_LARGE);
+    lv_obj_center(menu_mode_label);
+
+    ESP_LOGI(TAG, "Created DISPLAY screen (Ready to Anchor) with slide-in menu");
     return screen;
 }
 
