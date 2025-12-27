@@ -26,8 +26,10 @@ lv_obj_t* create_config_screen(ui_footer_page_cb_t page_callback, lv_obj_t **foo
 lv_obj_t* create_update_screen(ui_footer_page_cb_t page_callback, lv_obj_t **footer_out);
 lv_obj_t* create_tools_screen(ui_footer_page_cb_t page_callback, lv_obj_t **footer_out);
 
+// Main anchor monitoring screen (now with footer navigation)
+lv_obj_t* create_display_screen(ui_footer_page_cb_t page_callback, lv_obj_t **footer_out);
+
 // Special screens (no footer)
-lv_obj_t* create_display_screen(void);  // Main anchor monitoring screen
 lv_obj_t* create_test_screen(void);     // Hardware testing screen
 
 #endif // SCREENS_H

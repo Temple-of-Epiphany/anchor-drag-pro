@@ -47,9 +47,13 @@ static void btn_off_clicked(lv_event_t *e) {
 
 static void btn_ready_clicked(lv_event_t *e) {
     ESP_LOGI(TAG, "READY button clicked - Activating anchor monitoring");
-    // Navigate to DISPLAY screen (main operating screen, no footer)
-    lv_obj_t *display_screen = create_display_screen();
-    lv_scr_load(display_screen);
+    // Navigate to DISPLAY screen (main operating screen with footer)
+    if (g_page_callback != NULL) {
+        lv_obj_t *display_screen = create_display_screen(g_page_callback, NULL);
+        lv_scr_load(display_screen);
+    } else {
+        ESP_LOGW(TAG, "Page callback not set, cannot navigate to DISPLAY screen");
+    }
 }
 
 static void btn_info_clicked(lv_event_t *e) {
@@ -2038,7 +2042,7 @@ static void display_anchor_clicked(lv_event_t *e) {
 /**
  * DISPLAY SCREEN - Main Anchor Monitoring
  */
-lv_obj_t* create_display_screen(void) {
+lv_obj_t* create_display_screen(ui_footer_page_cb_t page_callback, lv_obj_t **footer_out) {
     lv_obj_t *screen = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(screen, lv_color_hex(0xADD8E6), 0);  // Light Blue background
 
@@ -2113,7 +2117,17 @@ lv_obj_t* create_display_screen(void) {
     THEME_STYLE_TEXT(connection_label, COLOR_TEXT_INVERSE, FONT_LABEL);
     lv_obj_align(connection_label, LV_ALIGN_BOTTOM_LEFT, 20, -70);
 
-    ESP_LOGI(TAG, "Created DISPLAY screen (Ready to Anchor) - footer navigation will be added by caller");
+    // Create footer navigation bar (swipe up menu)
+    lv_obj_t *footer = ui_footer_create(screen, PAGE_START, page_callback);
+    if (footer != NULL) {
+        ui_footer_show(footer);
+        lv_obj_move_foreground(footer);
+    }
+    if (footer_out != NULL) {
+        *footer_out = footer;
+    }
+
+    ESP_LOGI(TAG, "Created DISPLAY screen (Ready to Anchor) with footer navigation");
     return screen;
 }
 
