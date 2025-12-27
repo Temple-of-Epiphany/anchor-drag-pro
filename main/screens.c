@@ -2112,15 +2112,11 @@ lv_obj_t* create_display_screen(ui_footer_page_cb_t page_callback, lv_obj_t **fo
     THEME_STYLE_BUTTON(anchor_btn, COLOR_PRIMARY);
     lv_obj_add_event_cb(anchor_btn, display_anchor_clicked, LV_EVENT_CLICKED, NULL);
 
-    lv_obj_t *anchor_icon = lv_label_create(anchor_btn);
-    lv_label_set_text(anchor_icon, "\xE2\x9A\x93");  // ⚓ Anchor emoji
-    THEME_STYLE_TEXT(anchor_icon, COLOR_TEXT_PRIMARY, &orbitron_variablefont_wght_24);
-    lv_obj_align(anchor_icon, LV_ALIGN_CENTER, 0, -20);
-
     lv_obj_t *anchor_text = lv_label_create(anchor_btn);
-    lv_label_set_text(anchor_text, "SET ANCHOR");
-    THEME_STYLE_TEXT(anchor_text, COLOR_TEXT_PRIMARY, FONT_BODY_LARGE);
-    lv_obj_align(anchor_text, LV_ALIGN_CENTER, 0, 30);
+    lv_label_set_text(anchor_text, "SET\nANCHOR");
+    THEME_STYLE_TEXT(anchor_text, COLOR_TEXT_PRIMARY, FONT_TITLE);
+    lv_obj_set_style_text_align(anchor_text, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_center(anchor_text);
 
     // Create footer navigation bar (swipe up menu)
     lv_obj_t *footer = ui_footer_create(screen, PAGE_START, page_callback);
