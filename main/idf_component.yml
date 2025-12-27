@@ -11,3 +11,6 @@ dependencies:
     version: ^1.0.0
     public: true
   espressif/esp_io_expander: ^1
+  espressif/esp32_io_expander:
+    version: ^1.1.0
+    public: true

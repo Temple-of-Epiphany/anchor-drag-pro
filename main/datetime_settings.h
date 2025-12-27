@@ -21,10 +21,11 @@
 
 /**
  * Create date/time settings screen
+ * @param tools_screen_ref Reference to tools screen for back button
  * @param page_callback Callback for page navigation
  * @param footer_out Pointer to store footer object
  * @return Screen object
  */
-lv_obj_t* create_datetime_settings_screen(ui_footer_page_cb_t page_callback, lv_obj_t **footer_out);
+lv_obj_t* create_datetime_settings_screen(lv_obj_t *tools_screen_ref, ui_footer_page_cb_t page_callback, lv_obj_t **footer_out);
 
 #endif // DATETIME_SETTINGS_H

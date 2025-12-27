@@ -16,6 +16,7 @@
 #define SD_CARD_H
 
 #include <stdbool.h>
+
 #include <stdint.h>
 
 // SD card mount point

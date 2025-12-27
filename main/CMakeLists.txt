@@ -26,33 +26,29 @@ idf_component_register(SRCS "main.c"
                             "esp_io_expander_ch422g.c"
                             "ch422g.c"
                             "sd_card.c"
-                            # Custom fonts - Orbitron (futuristic/technical)
+                            # Custom fonts - Orbitron (futuristic/technical) - 16, 20, 24pt only
                             "fonts/orbitron_variablefont_wght_16.c"
                             "fonts/orbitron_variablefont_wght_20.c"
                             "fonts/orbitron_variablefont_wght_24.c"
-                            "fonts/orbitron_variablefont_wght_32.c"
-                            "fonts/orbitron_variablefont_wght_48.c"
-                            # Custom fonts - Poppins (clean, readable)
+                            # Removed: 32pt, 48pt (unused)
+                            # Custom fonts - Poppins (clean, readable) - 16, 20, 24pt only
                             "fonts/poppins_regular_16.c"
                             "fonts/poppins_regular_20.c"
                             "fonts/poppins_regular_24.c"
-                            "fonts/poppins_regular_32.c"
-                            "fonts/poppins_regular_48.c"
-                            # Custom fonts - GolosText (geometric, excellent readability)
+                            # Removed: 32pt, 48pt (unused)
+                            # Custom fonts - GolosText (geometric, excellent readability) - 16, 20, 24pt only
                             "fonts/golostext_regular_16.c"
                             "fonts/golostext_regular_20.c"
                             "fonts/golostext_regular_24.c"
-                            "fonts/golostext_regular_32.c"
-                            "fonts/golostext_regular_48.c"
-                            # Custom fonts - Apple Symbols (icons)
-                            "fonts/apple_symbols_16.c"
-                            "fonts/apple_symbols_24.c"
+                            # Removed: 32pt, 48pt (unused)
+                            # Custom fonts - Apple Symbols (icons) - 32pt only (helm symbol ⎈ U+2388)
                             "fonts/apple_symbols_32.c"
-                            # Custom fonts - SF Pro Rounded (Apple's rounded system font)
-                            "fonts/sfnsrounded_16.c"
-                            "fonts/sfnsrounded_20.c"
-                            "fonts/sfnsrounded_24.c"
-                            "fonts/sfnsrounded_32.c"
-                            "fonts/sfnsrounded_48.c"
+                            # Removed: 16pt, 24pt (unused)
+                            # SF Pro Rounded - Removed (unused)
+                            # "fonts/sfnsrounded_16.c"
+                            # "fonts/sfnsrounded_20.c"
+                            # "fonts/sfnsrounded_24.c"
+                            # "fonts/sfnsrounded_32.c"
+                            # "fonts/sfnsrounded_48.c"
                        INCLUDE_DIRS "."
                        REQUIRES fatfs console sdmmc vfs spi_flash nvs_flash)

@@ -2109,75 +2109,11 @@ lv_obj_t* create_display_screen(void) {
 
     // Connection info (bottom left)
     lv_obj_t *connection_label = lv_label_create(screen);
-    lv_label_set_text(connection_label, "N2K Connected: 127.0.0.1:10110");
+    lv_label_set_text(connection_label, "N2K: Not Connected");
     THEME_STYLE_TEXT(connection_label, COLOR_TEXT_INVERSE, FONT_LABEL);
     lv_obj_align(connection_label, LV_ALIGN_BOTTOM_LEFT, 20, -70);
 
-    // Time display (bottom right)
-    lv_obj_t *time_label = lv_label_create(screen);
-    lv_label_set_text(time_label, "12:34:56");
-    THEME_STYLE_TEXT(time_label, COLOR_TEXT_INVERSE, FONT_BODY_LARGE);
-    lv_obj_align(time_label, LV_ALIGN_BOTTOM_RIGHT, -20, -15);
-
-    // Hamburger menu button (bottom left corner)
-    lv_obj_t *menu_btn = lv_btn_create(screen);
-    lv_obj_set_size(menu_btn, 60, 50);
-    lv_obj_align(menu_btn, LV_ALIGN_BOTTOM_LEFT, 10, -10);
-    THEME_STYLE_BUTTON(menu_btn, COLOR_PRIMARY);
-    lv_obj_add_event_cb(menu_btn, display_menu_clicked, LV_EVENT_CLICKED, screen);
-
-    lv_obj_t *menu_icon = lv_label_create(menu_btn);
-    lv_label_set_text(menu_icon, "\xE2\x98\xB0");  // ☰ Hamburger icon
-    THEME_STYLE_TEXT(menu_icon, COLOR_TEXT_PRIMARY, FONT_TITLE);
-    lv_obj_center(menu_icon);
-
-    // Create slide-in menu panel (initially hidden)
-    lv_obj_t *menu_panel = lv_obj_create(screen);
-    lv_obj_set_size(menu_panel, 200, 300);
-    lv_obj_align(menu_panel, LV_ALIGN_BOTTOM_LEFT, -210, -70);  // Off-screen initially
-    lv_obj_set_style_bg_color(menu_panel, lv_color_hex(THEME_PANEL_BG_DARK), 0);
-    lv_obj_set_style_border_color(menu_panel, lv_color_hex(COLOR_BORDER), 0);
-    lv_obj_set_style_border_width(menu_panel, BORDER_WIDTH_MEDIUM, 0);
-    lv_obj_set_style_radius(menu_panel, RADIUS_MEDIUM, 0);
-    lv_obj_add_flag(menu_panel, LV_OBJ_FLAG_HIDDEN);  // Start hidden
-
-    // Menu item: INFO
-    lv_obj_t *menu_info_btn = lv_btn_create(menu_panel);
-    lv_obj_set_size(menu_info_btn, 180, 60);
-    lv_obj_align(menu_info_btn, LV_ALIGN_TOP_MID, 0, 10);
-    THEME_STYLE_BUTTON(menu_info_btn, COLOR_BTN_INFO);
-    lv_obj_add_event_cb(menu_info_btn, display_info_clicked, LV_EVENT_CLICKED, NULL);
-
-    lv_obj_t *menu_info_label = lv_label_create(menu_info_btn);
-    lv_label_set_text(menu_info_label, "INFO");
-    THEME_STYLE_TEXT(menu_info_label, COLOR_TEXT_PRIMARY, FONT_BUTTON_LARGE);
-    lv_obj_center(menu_info_label);
-
-    // Menu item: CONFIG
-    lv_obj_t *menu_config_btn = lv_btn_create(menu_panel);
-    lv_obj_set_size(menu_config_btn, 180, 60);
-    lv_obj_align(menu_config_btn, LV_ALIGN_TOP_MID, 0, 80);
-    THEME_STYLE_BUTTON(menu_config_btn, COLOR_BTN_CONFIG);
-    lv_obj_add_event_cb(menu_config_btn, display_config_clicked, LV_EVENT_CLICKED, NULL);
-
-    lv_obj_t *menu_config_label = lv_label_create(menu_config_btn);
-    lv_label_set_text(menu_config_label, "CONFIG");
-    THEME_STYLE_TEXT(menu_config_label, COLOR_TEXT_PRIMARY, FONT_BUTTON_LARGE);
-    lv_obj_center(menu_config_label);
-
-    // Menu item: MODE (back to START)
-    lv_obj_t *menu_mode_btn = lv_btn_create(menu_panel);
-    lv_obj_set_size(menu_mode_btn, 180, 60);
-    lv_obj_align(menu_mode_btn, LV_ALIGN_TOP_MID, 0, 150);
-    THEME_STYLE_BUTTON(menu_mode_btn, COLOR_BTN_OFF);
-    lv_obj_add_event_cb(menu_mode_btn, display_mode_clicked, LV_EVENT_CLICKED, NULL);
-
-    lv_obj_t *menu_mode_label = lv_label_create(menu_mode_btn);
-    lv_label_set_text(menu_mode_label, "MODE");
-    THEME_STYLE_TEXT(menu_mode_label, COLOR_TEXT_PRIMARY, FONT_BUTTON_LARGE);
-    lv_obj_center(menu_mode_label);
-
-    ESP_LOGI(TAG, "Created DISPLAY screen (Ready to Anchor) with slide-in menu");
+    ESP_LOGI(TAG, "Created DISPLAY screen (Ready to Anchor) - footer navigation will be added by caller");
     return screen;
 }
 

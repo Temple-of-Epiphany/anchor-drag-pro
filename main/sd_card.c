@@ -165,98 +165,29 @@ bool sd_card_is_mounted(void) {
 }
 
 bool sd_card_format(void) {
+    if (!is_mounted) {
+        ESP_LOGE(TAG, "SD card not mounted - mount it first before formatting");
+        return false;
+    }
+
     ESP_LOGW(TAG, "Formatting SD card - this may take 30+ seconds...");
 
     // Disable watchdog for this task during SD card format (can take 30+ seconds)
     TaskHandle_t current_task = xTaskGetCurrentTaskHandle();
     esp_task_wdt_delete(current_task);
 
-    // Unmount if mounted
-    if (is_mounted) {
-        ESP_LOGW(TAG, "Unmounting SD card before format");
-        sd_card_deinit();
-        vTaskDelay(pdMS_TO_TICKS(500));
-    }
-
-    esp_err_t ret;
-
-    // Configure CH422G for SD card using ESP_IO_Expander library
-    ESP_LOGI(TAG, "Configuring CH422G for SD format via ESP_IO_Expander");
-
-    esp_io_expander_handle_t expander = ch422g_get_handle();
-    if (expander == NULL) {
-        ESP_LOGE(TAG, "CH422G expander not initialized!");
-        esp_task_wdt_add(current_task);
-        return false;
-    }
-
-    // Ensure SD_CS LOW (should already be from init)
-    ret = esp_io_expander_set_level(expander, SD_CS, 0);
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to set SD CS LOW: %s", esp_err_to_name(ret));
-        esp_task_wdt_add(current_task);
-        return false;
-    }
-
-    ESP_LOGI(TAG, "CH422G ready for SD format");
-    vTaskDelay(pdMS_TO_TICKS(100));  // Allow hardware to settle
-
-    // Mount configuration with format enabled
-    esp_vfs_fat_sdmmc_mount_config_t mount_config = {
-        .format_if_mount_failed = true,
-        .max_files = 5,
-        .allocation_unit_size = 16 * 1024
-    };
-
-    // SPI bus configuration
-    spi_bus_config_t bus_cfg = {
-        .mosi_io_num = PIN_NUM_MOSI,
-        .miso_io_num = PIN_NUM_MISO,
-        .sclk_io_num = PIN_NUM_CLK,
-        .quadwp_io_num = -1,
-        .quadhd_io_num = -1,
-        .max_transfer_sz = 4000,
-    };
-
-    // Initialize SPI bus (use SDSPI_DEFAULT_DMA like Waveshare)
-    ret = spi_bus_initialize(host.slot, &bus_cfg, SDSPI_DEFAULT_DMA);
-    if (ret != ESP_OK && ret != ESP_ERR_INVALID_STATE) {
-        ESP_LOGW(TAG, "Failed to initialize bus: %s", esp_err_to_name(ret));
-        esp_task_wdt_add(current_task);
-        return false;
-    }
-    if (ret == ESP_ERR_INVALID_STATE) {
-        ESP_LOGW(TAG, "SPI bus already initialized (OK)");
-    }
-
-    // Configure SD card slot
-    sdspi_device_config_t slot_config = SDSPI_DEVICE_CONFIG_DEFAULT();
-    slot_config.gpio_cs = PIN_NUM_CS;
-    slot_config.host_id = host.slot;
-
-    ESP_LOGW(TAG, "Starting format operation (FAT32)...");
-
-    // Format by mounting with format flag
-    ret = esp_vfs_fat_sdspi_mount(SD_MOUNT_POINT, &host, &slot_config, &mount_config, &card);
-
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to format SD card: %s", esp_err_to_name(ret));
-        spi_bus_free(host.slot);
-        esp_task_wdt_add(current_task);
-        return false;
-    }
-
-    is_mounted = true;
-    ESP_LOGW(TAG, "SD card formatted successfully!");
-
-    // Print card info
-    if (card != NULL) {
-        sdmmc_card_print_info(stdout, card);
-    }
+    // Use proper format API (not format_if_mount_failed)
+    esp_err_t ret = esp_vfs_fat_sdcard_format(SD_MOUNT_POINT, card);
 
     // Re-enable watchdog
     esp_task_wdt_add(current_task);
 
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to format SD card: %s", esp_err_to_name(ret));
+        return false;
+    }
+
+    ESP_LOGW(TAG, "SD card formatted successfully!");
     return true;
 }
 
@@ -297,7 +228,7 @@ bool sd_card_list_dir(const char *path, sd_file_info_t *files, int max_files, in
     TaskHandle_t current_task = xTaskGetCurrentTaskHandle();
     esp_task_wdt_delete(current_task);
 
-    char full_path[300];
+    char full_path[128];  // Reduced from 300 to save stack
     snprintf(full_path, sizeof(full_path), "%s/%s", SD_MOUNT_POINT, path);
 
     ESP_LOGI(TAG, "Opening directory: %s", full_path);
@@ -319,7 +250,7 @@ bool sd_card_list_dir(const char *path, sd_file_info_t *files, int max_files, in
         }
 
         // Get file info
-        char file_path[600];
+        char file_path[400];  // Reduced from 600 to save stack
         snprintf(file_path, sizeof(file_path), "%s/%s", full_path, entry->d_name);
 
         struct stat st;
