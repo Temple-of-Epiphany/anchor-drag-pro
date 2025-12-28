@@ -25,11 +25,54 @@
 #include "esp_chip_info.h"
 #include "esp_flash.h"
 #include "esp_heap_caps.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#if ENABLE_WIFI
+#include "wifi_manager.h"
+#endif
 
 static const char *TAG = "screens";
 
 // Static storage for page callback (used for START screen button navigation)
 static ui_footer_page_cb_t g_page_callback = NULL;
+
+// Forward declarations for header icon callbacks
+static lv_obj_t* create_wifi_setup_screen(lv_obj_t *menu_screen_ref);
+static lv_obj_t* create_bluetooth_setup_screen(lv_obj_t *menu_screen_ref);
+static lv_obj_t* create_tfcard_screen(lv_obj_t *tools_screen_ref);
+
+/**
+ * Header icon click callbacks
+ * These are registered with the header and called when icons are tapped
+ */
+static void header_wifi_icon_clicked(void) {
+    ESP_LOGI(TAG, "Header WiFi icon clicked - navigating to WiFi setup");
+    lv_obj_t *wifi_screen = create_wifi_setup_screen(NULL);
+    lv_scr_load(wifi_screen);
+}
+
+static void header_bluetooth_icon_clicked(void) {
+    ESP_LOGI(TAG, "Header Bluetooth icon clicked - navigating to Bluetooth setup");
+    lv_obj_t *bt_screen = create_bluetooth_setup_screen(NULL);
+    lv_scr_load(bt_screen);
+}
+
+static void header_tfcard_icon_clicked(void) {
+    ESP_LOGI(TAG, "Header TF Card icon clicked - navigating to TF Card screen");
+    lv_obj_t *tfcard_screen = create_tfcard_screen(NULL);
+    lv_scr_load(tfcard_screen);
+}
+
+/**
+ * Helper function to register all header icon click callbacks
+ * Call this after creating a header on any screen
+ */
+static void register_header_callbacks(lv_obj_t *header) {
+    if (header == NULL) return;
+    ui_header_set_wifi_click_cb(header, header_wifi_icon_clicked);
+    ui_header_set_bluetooth_click_cb(header, header_bluetooth_icon_clicked);
+    ui_header_set_tfcard_click_cb(header, header_tfcard_icon_clicked);
+}
 
 /**
  * Button event handlers for START screen
@@ -1383,9 +1426,14 @@ static lv_obj_t* create_clear_gps_screen(lv_obj_t *tools_screen_ref) {
 }
 
 /**
- * WIFI/BLUETOOTH SCREEN - Network Configuration
+ * WIFI/BLUETOOTH SCREEN - Network Configuration Menu
  */
 
+// Forward declarations
+static lv_obj_t* create_wifi_setup_screen(lv_obj_t *menu_screen_ref);
+static lv_obj_t* create_bluetooth_setup_screen(lv_obj_t *menu_screen_ref);
+
+// WiFi/BT menu callbacks
 static void wifi_bt_back_clicked(lv_event_t *e) {
     lv_obj_t *tools_screen = (lv_obj_t *)lv_event_get_user_data(e);
     if (tools_screen != NULL) {
@@ -1393,6 +1441,21 @@ static void wifi_bt_back_clicked(lv_event_t *e) {
     }
 }
 
+static void wifi_menu_clicked(lv_event_t *e) {
+    ESP_LOGI(TAG, "WiFi Setup button clicked");
+    lv_obj_t *menu_screen = lv_scr_act();
+    lv_obj_t *wifi_screen = create_wifi_setup_screen(menu_screen);
+    lv_scr_load(wifi_screen);
+}
+
+static void bluetooth_menu_clicked(lv_event_t *e) {
+    ESP_LOGI(TAG, "Bluetooth Setup button clicked");
+    lv_obj_t *menu_screen = lv_scr_act();
+    lv_obj_t *bt_screen = create_bluetooth_setup_screen(menu_screen);
+    lv_scr_load(bt_screen);
+}
+
+// WiFi/Bluetooth Config Menu Screen
 static lv_obj_t* create_wifi_bluetooth_screen(lv_obj_t *tools_screen_ref) {
     lv_obj_t *screen = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(screen, lv_color_hex(THEME_SCREEN_BG), 0);
@@ -1403,18 +1466,278 @@ static lv_obj_t* create_wifi_bluetooth_screen(lv_obj_t *tools_screen_ref) {
 
     // Title
     lv_obj_t *title = lv_label_create(screen);
-    lv_label_set_text(title, "WIFI / BLUETOOTH CONFIG");
+    lv_label_set_text(title, "WIFI / BLUETOOTH");
+    THEME_STYLE_TEXT(title, THEME_TITLE_COLOR, FONT_TITLE);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, HEADER_HEIGHT + SPACING_MARGIN_SMALL);
+
+    // WiFi button
+    lv_obj_t *wifi_btn = lv_btn_create(screen);
+    lv_obj_set_size(wifi_btn, 300, 80);
+    lv_obj_align(wifi_btn, LV_ALIGN_CENTER, 0, -60);
+    THEME_STYLE_BUTTON(wifi_btn, COLOR_PRIMARY);
+    lv_obj_add_event_cb(wifi_btn, wifi_menu_clicked, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_t *wifi_label = lv_label_create(wifi_btn);
+    lv_label_set_text(wifi_label, LV_SYMBOL_WIFI " WiFi Setup");
+    THEME_STYLE_TEXT(wifi_label, COLOR_TEXT_PRIMARY, FONT_BUTTON_LARGE);
+    lv_obj_center(wifi_label);
+
+    // Bluetooth button
+    lv_obj_t *bt_btn = lv_btn_create(screen);
+    lv_obj_set_size(bt_btn, 300, 80);
+    lv_obj_align(bt_btn, LV_ALIGN_CENTER, 0, 40);
+    THEME_STYLE_BUTTON(bt_btn, COLOR_PRIMARY);
+    lv_obj_add_event_cb(bt_btn, bluetooth_menu_clicked, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_t *bt_label = lv_label_create(bt_btn);
+    lv_label_set_text(bt_label, LV_SYMBOL_BLUETOOTH " Bluetooth Setup");
+    THEME_STYLE_TEXT(bt_label, COLOR_TEXT_PRIMARY, FONT_BUTTON_LARGE);
+    lv_obj_center(bt_label);
+
+    // Back button
+    lv_obj_t *back_btn = lv_btn_create(screen);
+    lv_obj_set_size(back_btn, 150, 50);
+    lv_obj_align(back_btn, LV_ALIGN_BOTTOM_LEFT, 30, -20);
+    THEME_STYLE_BUTTON(back_btn, THEME_BTN_CANCEL);
+    lv_obj_add_event_cb(back_btn, wifi_bt_back_clicked, LV_EVENT_CLICKED, tools_screen_ref);
+
+    lv_obj_t *back_label = lv_label_create(back_btn);
+    lv_label_set_text(back_label, "BACK");
+    THEME_STYLE_TEXT(back_label, COLOR_TEXT_PRIMARY, FONT_BUTTON_LARGE);
+    lv_obj_center(back_label);
+
+    return screen;
+}
+
+/**
+ * WIFI SETUP SCREEN - Network Scanning and Connection
+ */
+
+// WiFi screen state
+static lv_obj_t *wifi_network_list = NULL;
+static lv_obj_t *wifi_status_label = NULL;
+static lv_obj_t *wifi_password_screen = NULL;
+static lv_obj_t *wifi_password_ta = NULL;
+static lv_obj_t *wifi_keyboard = NULL;
+static char selected_ssid[33] = {0};
+
+// WiFi Setup callbacks
+static void wifi_setup_back_clicked(lv_event_t *e) {
+    lv_obj_t *menu_screen = (lv_obj_t *)lv_event_get_user_data(e);
+    if (menu_screen != NULL) {
+        lv_scr_load(menu_screen);
+    }
+}
+
+static void wifi_scan_clicked(lv_event_t *e) {
+    ESP_LOGI(TAG, "WiFi Scan button clicked");
+#if ENABLE_WIFI
+    esp_err_t ret = wifi_manager_scan_start();
+    if (ret == ESP_OK) {
+        ESP_LOGI(TAG, "WiFi scan started");
+        if (wifi_status_label) {
+            lv_label_set_text(wifi_status_label, "Scanning networks...");
+        }
+
+        // Wait a bit for scan to complete
+        vTaskDelay(pdMS_TO_TICKS(3000));
+
+        // Get scan results
+        wifi_ap_record_t ap_list[20];
+        uint16_t num_aps = 0;
+        ret = wifi_manager_scan_get_results(ap_list, 20, &num_aps);
+
+        if (ret == ESP_OK && wifi_network_list) {
+            // Clear existing list
+            lv_obj_clean(wifi_network_list);
+
+            ESP_LOGI(TAG, "Found %d networks", num_aps);
+
+            // Add networks to list
+            for (int i = 0; i < num_aps; i++) {
+                char item_text[64];
+                snprintf(item_text, sizeof(item_text), "%s (%d dBm)",
+                         (char*)ap_list[i].ssid, ap_list[i].rssi);
+
+                lv_obj_t *btn = lv_list_add_btn(wifi_network_list, LV_SYMBOL_WIFI, item_text);
+                // Store SSID in user data for connection
+                char *ssid_copy = malloc(33);
+                if (ssid_copy) {
+                    strncpy(ssid_copy, (char*)ap_list[i].ssid, 32);
+                    ssid_copy[32] = '\0';
+                    lv_obj_set_user_data(btn, ssid_copy);
+                }
+            }
+
+            if (wifi_status_label) {
+                char status_text[64];
+                snprintf(status_text, sizeof(status_text), "Found %d networks", num_aps);
+                lv_label_set_text(wifi_status_label, status_text);
+            }
+        }
+    } else {
+        ESP_LOGE(TAG, "WiFi scan failed: %s", esp_err_to_name(ret));
+        if (wifi_status_label) {
+            lv_label_set_text(wifi_status_label, "Scan failed");
+        }
+    }
+#endif
+}
+
+static void wifi_network_clicked(lv_event_t *e) {
+    lv_obj_t *btn = lv_event_get_target(e);
+    char *ssid = (char*)lv_obj_get_user_data(btn);
+
+    if (ssid) {
+        ESP_LOGI(TAG, "Selected network: %s", ssid);
+        strncpy(selected_ssid, ssid, sizeof(selected_ssid) - 1);
+        selected_ssid[sizeof(selected_ssid) - 1] = '\0';
+
+        // TODO: Show password entry screen
+        ESP_LOGI(TAG, "Password entry not yet implemented");
+    }
+}
+
+static void wifi_disconnect_clicked(lv_event_t *e) {
+    ESP_LOGI(TAG, "WiFi Disconnect button clicked");
+#if ENABLE_WIFI
+    wifi_manager_disconnect();
+    if (wifi_status_label) {
+        lv_label_set_text(wifi_status_label, "Disconnected");
+    }
+#endif
+}
+
+// WiFi Setup Screen
+static lv_obj_t* create_wifi_setup_screen(lv_obj_t *menu_screen_ref) {
+    lv_obj_t *screen = lv_obj_create(NULL);
+    lv_obj_set_style_bg_color(screen, lv_color_hex(THEME_SCREEN_BG), 0);
+
+    // Create header
+    lv_obj_t *header = ui_header_create(screen);
+    ui_header_set_gps_status(header, false);
+
+    // Title
+    lv_obj_t *title = lv_label_create(screen);
+    lv_label_set_text(title, "WiFi Setup");
+    THEME_STYLE_TEXT(title, THEME_TITLE_COLOR, FONT_TITLE);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, HEADER_HEIGHT + SPACING_MARGIN_SMALL);
+
+    // Status panel
+    lv_obj_t *status_panel = lv_obj_create(screen);
+    lv_obj_set_size(status_panel, 750, 60);
+    lv_obj_align(status_panel, LV_ALIGN_TOP_MID, 0, HEADER_HEIGHT + 50);
+    lv_obj_set_style_bg_color(status_panel, lv_color_hex(0x1a1a1a), 0);
+    lv_obj_set_style_border_width(status_panel, 1, 0);
+    lv_obj_set_style_border_color(status_panel, lv_color_hex(0x444444), 0);
+
+    wifi_status_label = lv_label_create(status_panel);
+#if ENABLE_WIFI
+    if (wifi_manager_is_connected()) {
+        char ip_str[16] = {0};
+        char ssid[33] = {0};
+        int8_t rssi = 0;
+        wifi_manager_get_ip(ip_str);
+        wifi_manager_get_ssid(ssid);
+        wifi_manager_get_rssi(&rssi);
+
+        char status_text[128];
+        snprintf(status_text, sizeof(status_text), "Connected to %s - IP: %s (%d dBm)",
+                 ssid, ip_str, rssi);
+        lv_label_set_text(wifi_status_label, status_text);
+    } else {
+        lv_label_set_text(wifi_status_label, "Not connected - Scan for networks");
+    }
+#else
+    lv_label_set_text(wifi_status_label, "WiFi disabled in configuration");
+#endif
+    THEME_STYLE_TEXT(wifi_status_label, COLOR_TEXT_PRIMARY, FONT_BODY_NORMAL);
+    lv_obj_center(wifi_status_label);
+
+    // Scan button
+    lv_obj_t *scan_btn = lv_btn_create(screen);
+    lv_obj_set_size(scan_btn, 200, 50);
+    lv_obj_align(scan_btn, LV_ALIGN_TOP_LEFT, 30, HEADER_HEIGHT + 130);
+    THEME_STYLE_BUTTON(scan_btn, COLOR_PRIMARY);
+    lv_obj_add_event_cb(scan_btn, wifi_scan_clicked, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_t *scan_label = lv_label_create(scan_btn);
+    lv_label_set_text(scan_label, LV_SYMBOL_REFRESH " Scan");
+    THEME_STYLE_TEXT(scan_label, COLOR_TEXT_PRIMARY, FONT_BUTTON_SMALL);
+    lv_obj_center(scan_label);
+
+    // Disconnect button
+    lv_obj_t *disconnect_btn = lv_btn_create(screen);
+    lv_obj_set_size(disconnect_btn, 200, 50);
+    lv_obj_align(disconnect_btn, LV_ALIGN_TOP_RIGHT, -30, HEADER_HEIGHT + 130);
+    THEME_STYLE_BUTTON(disconnect_btn, THEME_BTN_DANGER);
+    lv_obj_add_event_cb(disconnect_btn, wifi_disconnect_clicked, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_t *disconnect_label = lv_label_create(disconnect_btn);
+    lv_label_set_text(disconnect_label, "Disconnect");
+    THEME_STYLE_TEXT(disconnect_label, COLOR_TEXT_PRIMARY, FONT_BUTTON_SMALL);
+    lv_obj_center(disconnect_label);
+
+    // Network list
+    wifi_network_list = lv_list_create(screen);
+    lv_obj_set_size(wifi_network_list, 750, 200);
+    lv_obj_align(wifi_network_list, LV_ALIGN_TOP_MID, 0, HEADER_HEIGHT + 200);
+    lv_obj_set_style_bg_color(wifi_network_list, lv_color_hex(0x1a1a1a), 0);
+    lv_obj_set_style_border_width(wifi_network_list, 1, 0);
+    lv_obj_set_style_border_color(wifi_network_list, lv_color_hex(0x444444), 0);
+
+    // Add placeholder text
+    lv_obj_t *placeholder = lv_label_create(wifi_network_list);
+    lv_label_set_text(placeholder, "Press SCAN to find networks");
+    THEME_STYLE_TEXT(placeholder, COLOR_TEXT_SECONDARY, FONT_BODY_NORMAL);
+
+    // Back button
+    lv_obj_t *back_btn = lv_btn_create(screen);
+    lv_obj_set_size(back_btn, 150, 50);
+    lv_obj_align(back_btn, LV_ALIGN_BOTTOM_LEFT, 30, -20);
+    THEME_STYLE_BUTTON(back_btn, THEME_BTN_CANCEL);
+    lv_obj_add_event_cb(back_btn, wifi_setup_back_clicked, LV_EVENT_CLICKED, menu_screen_ref);
+
+    lv_obj_t *back_label = lv_label_create(back_btn);
+    lv_label_set_text(back_label, "BACK");
+    THEME_STYLE_TEXT(back_label, COLOR_TEXT_PRIMARY, FONT_BUTTON_LARGE);
+    lv_obj_center(back_label);
+
+    return screen;
+}
+
+/**
+ * BLUETOOTH SETUP SCREEN - Bluetooth Device Pairing (Placeholder)
+ */
+
+static void bluetooth_setup_back_clicked(lv_event_t *e) {
+    lv_obj_t *menu_screen = (lv_obj_t *)lv_event_get_user_data(e);
+    if (menu_screen != NULL) {
+        lv_scr_load(menu_screen);
+    }
+}
+
+static lv_obj_t* create_bluetooth_setup_screen(lv_obj_t *menu_screen_ref) {
+    lv_obj_t *screen = lv_obj_create(NULL);
+    lv_obj_set_style_bg_color(screen, lv_color_hex(THEME_SCREEN_BG), 0);
+
+    // Create header
+    lv_obj_t *header = ui_header_create(screen);
+    ui_header_set_gps_status(header, false);
+
+    // Title
+    lv_obj_t *title = lv_label_create(screen);
+    lv_label_set_text(title, "Bluetooth Setup");
     THEME_STYLE_TEXT(title, THEME_TITLE_COLOR, FONT_TITLE);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, HEADER_HEIGHT + SPACING_MARGIN_SMALL);
 
     // Info label
     lv_obj_t *info_label = lv_label_create(screen);
-    lv_label_set_text(info_label, "WiFi/Bluetooth configuration\n"
-                                   "functionality coming soon.\n\n"
+    lv_label_set_text(info_label, "Bluetooth device pairing\nfunctionality coming soon.\n\n"
                                    "Features:\n"
-                                   "- WiFi Network Scanning\n"
-                                   "- Adhoc Network (anchor-drag-alarm)\n"
-                                   "- Bluetooth Device Pairing");
+                                   "- Device Scanning\n"
+                                   "- Pairing Management\n"
+                                   "- Connection Status");
     lv_obj_set_style_text_color(info_label, lv_color_white(), 0);
     lv_obj_set_style_text_font(info_label, FONT_BODY_LARGE, 0);
     lv_obj_align(info_label, LV_ALIGN_CENTER, 0, -20);
@@ -1424,7 +1747,7 @@ static lv_obj_t* create_wifi_bluetooth_screen(lv_obj_t *tools_screen_ref) {
     lv_obj_set_size(back_btn, 150, 50);
     lv_obj_align(back_btn, LV_ALIGN_BOTTOM_LEFT, 30, -20);
     THEME_STYLE_BUTTON(back_btn, THEME_BTN_CANCEL);
-    lv_obj_add_event_cb(back_btn, wifi_bt_back_clicked, LV_EVENT_CLICKED, tools_screen_ref);
+    lv_obj_add_event_cb(back_btn, bluetooth_setup_back_clicked, LV_EVENT_CLICKED, menu_screen_ref);
 
     lv_obj_t *back_label = lv_label_create(back_btn);
     lv_label_set_text(back_label, "BACK");
@@ -2066,6 +2389,7 @@ lv_obj_t* create_display_screen(ui_footer_page_cb_t page_callback, lv_obj_t **fo
     // Create header bar with satellite icon
     lv_obj_t *header = ui_header_create(screen);
     ui_header_set_gps_status(header, false);  // Default to GPS not found
+    register_header_callbacks(header);
 
     // Status bar (below header)
     lv_obj_t *status_bar = lv_obj_create(screen);

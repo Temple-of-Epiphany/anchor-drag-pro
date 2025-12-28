@@ -96,4 +96,30 @@ void ui_header_set_bluetooth_status(lv_obj_t *header, bool connected);
  */
 bool ui_header_set_time(lv_obj_t *header, int hour, int min, int sec);
 
+/**
+ * Callback typedef for header icon clicks
+ */
+typedef void (*ui_header_icon_cb_t)(void);
+
+/**
+ * Register click callback for WiFi icon (left side, position 1)
+ * @param header Header object returned from ui_header_create()
+ * @param callback Function to call when WiFi icon is clicked
+ */
+void ui_header_set_wifi_click_cb(lv_obj_t *header, ui_header_icon_cb_t callback);
+
+/**
+ * Register click callback for Bluetooth icon (left side, position 0)
+ * @param header Header object returned from ui_header_create()
+ * @param callback Function to call when Bluetooth icon is clicked
+ */
+void ui_header_set_bluetooth_click_cb(lv_obj_t *header, ui_header_icon_cb_t callback);
+
+/**
+ * Register click callback for TF Card icon (left side, position 2)
+ * @param header Header object returned from ui_header_create()
+ * @param callback Function to call when TF Card icon is clicked
+ */
+void ui_header_set_tfcard_click_cb(lv_obj_t *header, ui_header_icon_cb_t callback);
+
 #endif // UI_HEADER_H

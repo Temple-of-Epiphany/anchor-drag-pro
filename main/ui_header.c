@@ -38,7 +38,44 @@ typedef struct {
     lv_obj_t *left_icons[3];   // 3 left icon placeholders
     lv_obj_t *right_icons[3];  // 3 right icon placeholders (0=compass, 1=gps, 2=reserved)
     lv_obj_t *icon_labels[6];  // Labels for each icon
+    ui_header_icon_cb_t wifi_click_cb;      // WiFi icon click callback
+    ui_header_icon_cb_t bluetooth_click_cb; // Bluetooth icon click callback
+    ui_header_icon_cb_t tfcard_click_cb;    // TF Card icon click callback
 } ui_header_data_t;
+
+// Icon click event handlers
+static void wifi_icon_clicked(lv_event_t *e) {
+    lv_obj_t *header_bar = lv_event_get_user_data(e);
+    if (header_bar == NULL) return;
+
+    ui_header_data_t *data = (ui_header_data_t *)lv_obj_get_user_data(header_bar);
+    if (data && data->wifi_click_cb) {
+        ESP_LOGI(TAG, "WiFi icon clicked");
+        data->wifi_click_cb();
+    }
+}
+
+static void bluetooth_icon_clicked(lv_event_t *e) {
+    lv_obj_t *header_bar = lv_event_get_user_data(e);
+    if (header_bar == NULL) return;
+
+    ui_header_data_t *data = (ui_header_data_t *)lv_obj_get_user_data(header_bar);
+    if (data && data->bluetooth_click_cb) {
+        ESP_LOGI(TAG, "Bluetooth icon clicked");
+        data->bluetooth_click_cb();
+    }
+}
+
+static void tfcard_icon_clicked(lv_event_t *e) {
+    lv_obj_t *header_bar = lv_event_get_user_data(e);
+    if (header_bar == NULL) return;
+
+    ui_header_data_t *data = (ui_header_data_t *)lv_obj_get_user_data(header_bar);
+    if (data && data->tfcard_click_cb) {
+        ESP_LOGI(TAG, "TF Card icon clicked");
+        data->tfcard_click_cb();
+    }
+}
 
 /**
  * Create full-width header bar with title and icon placeholders
@@ -151,6 +188,19 @@ lv_obj_t* ui_header_create(lv_obj_t *parent) {
 
     // Store data as user data (use header_bar as the handle)
     lv_obj_set_user_data(data->header_bar, data);
+
+    // Make icons clickable and add event callbacks
+    // WiFi icon (left icon 1)
+    lv_obj_add_flag(data->left_icons[1], LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(data->left_icons[1], wifi_icon_clicked, LV_EVENT_CLICKED, data->header_bar);
+
+    // Bluetooth icon (left icon 0)
+    lv_obj_add_flag(data->left_icons[0], LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(data->left_icons[0], bluetooth_icon_clicked, LV_EVENT_CLICKED, data->header_bar);
+
+    // TF Card icon (left icon 2)
+    lv_obj_add_flag(data->left_icons[2], LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(data->left_icons[2], tfcard_icon_clicked, LV_EVENT_CLICKED, data->header_bar);
 
     ESP_LOGI(TAG, "Header bar created: %dx%d at top", HEADER_WIDTH, HEADER_HEIGHT);
     return data->header_bar;
@@ -317,4 +367,43 @@ bool ui_header_set_time(lv_obj_t *header, int hour, int min, int sec) {
     }
 
     return true;
+}
+
+/**
+ * Register click callback for WiFi icon
+ */
+void ui_header_set_wifi_click_cb(lv_obj_t *header, ui_header_icon_cb_t callback) {
+    if (header == NULL) return;
+
+    ui_header_data_t *data = (ui_header_data_t *)lv_obj_get_user_data(header);
+    if (data == NULL) return;
+
+    data->wifi_click_cb = callback;
+    ESP_LOGI(TAG, "WiFi icon click callback registered");
+}
+
+/**
+ * Register click callback for Bluetooth icon
+ */
+void ui_header_set_bluetooth_click_cb(lv_obj_t *header, ui_header_icon_cb_t callback) {
+    if (header == NULL) return;
+
+    ui_header_data_t *data = (ui_header_data_t *)lv_obj_get_user_data(header);
+    if (data == NULL) return;
+
+    data->bluetooth_click_cb = callback;
+    ESP_LOGI(TAG, "Bluetooth icon click callback registered");
+}
+
+/**
+ * Register click callback for TF Card icon
+ */
+void ui_header_set_tfcard_click_cb(lv_obj_t *header, ui_header_icon_cb_t callback) {
+    if (header == NULL) return;
+
+    ui_header_data_t *data = (ui_header_data_t *)lv_obj_get_user_data(header);
+    if (data == NULL) return;
+
+    data->tfcard_click_cb = callback;
+    ESP_LOGI(TAG, "TF Card icon click callback registered");
 }
