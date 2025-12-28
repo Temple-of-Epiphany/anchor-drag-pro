@@ -229,8 +229,16 @@
 #define ENABLE_RS485                0       // Disable RS485 (not used yet)
 #define ENABLE_EXTERNAL_GPS         0       // Disable external GPS (not used yet)
 #define ENABLE_SD_CARD              0       // Disable SD card (not used yet)
-#define ENABLE_WIFI                 0       // Disable WiFi (not used yet)
+#define ENABLE_WIFI                 1       // Enable WiFi connectivity
 #define ENABLE_BLUETOOTH            0       // Disable Bluetooth (not used yet)
+
+// ============================================================================
+// WiFi Configuration
+// ============================================================================
+#define WIFI_SSID_MAX_LEN       32      // Maximum SSID length
+#define WIFI_PASSWORD_MAX_LEN   64      // Maximum password length
+#define WIFI_CONNECT_TIMEOUT_MS 10000   // WiFi connection timeout (10 seconds)
+#define WIFI_RECONNECT_ATTEMPTS 3       // Number of reconnection attempts
 
 // ============================================================================
 // NVS (Non-Volatile Storage) Configuration
@@ -243,6 +251,8 @@
 #define NVS_KEY_GPS_SOURCE      "gps_source"
 #define NVS_KEY_BRIGHTNESS      "brightness"
 #define NVS_KEY_BUZZER_VOL      "buzzer_vol"
+#define NVS_KEY_WIFI_SSID       "wifi_ssid"
+#define NVS_KEY_WIFI_PASS       "wifi_pass"
 
 // ============================================================================
 // FreeRTOS Task Configuration

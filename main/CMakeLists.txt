@@ -26,6 +26,7 @@ idf_component_register(SRCS "main.c"
                             "esp_io_expander_ch422g.c"
                             "ch422g.c"
                             "sd_card.c"
+                            "wifi_manager.c"
                             # Custom fonts - Orbitron (futuristic/technical) - 16, 20, 24pt only
                             "fonts/orbitron_variablefont_wght_16.c"
                             "fonts/orbitron_variablefont_wght_20.c"
@@ -51,4 +52,4 @@ idf_component_register(SRCS "main.c"
                             # "fonts/sfnsrounded_32.c"
                             # "fonts/sfnsrounded_48.c"
                        INCLUDE_DIRS "."
-                       REQUIRES fatfs console sdmmc vfs spi_flash nvs_flash)
+                       REQUIRES fatfs console sdmmc vfs spi_flash nvs_flash esp_wifi)

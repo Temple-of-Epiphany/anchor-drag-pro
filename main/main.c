@@ -43,6 +43,10 @@
 #include "power_management.h"
 #include "nvs_flash.h"
 
+#if ENABLE_WIFI
+#include "wifi_manager.h"
+#endif
+
 // External font declarations
 LV_FONT_DECLARE(orbitron_variablefont_wght_24);
 
@@ -438,6 +442,24 @@ void app_main(void)
     } else {
         ESP_LOGI(TAG, "Cold boot (normal startup)");
     }
+
+    #if ENABLE_WIFI
+    // Initialize WiFi Manager
+    ESP_LOGI(TAG, "Initializing WiFi...");
+    ret = wifi_manager_init();
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "WiFi initialization failed: %s", esp_err_to_name(ret));
+    } else {
+        ESP_LOGI(TAG, "WiFi initialized successfully");
+        // Try to connect using saved credentials
+        ret = wifi_manager_connect_saved();
+        if (ret == ESP_OK) {
+            ESP_LOGI(TAG, "Connecting to saved WiFi network...");
+        } else {
+            ESP_LOGI(TAG, "No saved WiFi credentials found");
+        }
+    }
+    #endif
 
     // Initialize RTC (Real-Time Clock)
     ESP_LOGI(TAG, "Initializing RTC (PCF85063A)...");
