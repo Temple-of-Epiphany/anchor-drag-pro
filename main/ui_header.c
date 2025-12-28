@@ -38,6 +38,11 @@ static bool g_gps_found = false;
 static bool g_compass_found = false;
 static bool g_anchor_armed = false;
 
+// Track all created headers so we can update them all when status changes
+#define MAX_HEADERS 10
+static lv_obj_t *g_all_headers[MAX_HEADERS] = {NULL};
+static int g_header_count = 0;
+
 // Child objects stored as user data
 typedef struct {
     lv_obj_t *header_bar;      // Main header container
@@ -210,6 +215,13 @@ lv_obj_t* ui_header_create(lv_obj_t *parent) {
     lv_obj_add_flag(data->left_icons[2], LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(data->left_icons[2], tfcard_icon_clicked, LV_EVENT_CLICKED, data->header_bar);
 
+    // Register this header in global list for status updates
+    if (g_header_count < MAX_HEADERS) {
+        g_all_headers[g_header_count++] = data->header_bar;
+    } else {
+        ESP_LOGW(TAG, "Max headers reached, cannot track this header");
+    }
+
     // Apply current global icon state to newly created header
     ui_header_set_wifi_status(data->header_bar, g_wifi_connected);
     ui_header_set_bluetooth_status(data->header_bar, g_bluetooth_connected);
@@ -218,9 +230,10 @@ lv_obj_t* ui_header_create(lv_obj_t *parent) {
     ui_header_set_compass_status(data->header_bar, g_compass_found);
     ui_header_set_anchor_armed(data->header_bar, g_anchor_armed);
 
-    ESP_LOGI(TAG, "Header bar created: %dx%d at top (WiFi:%d BT:%d TF:%d GPS:%d Compass:%d Anchor:%d)",
+    ESP_LOGI(TAG, "Header bar created: %dx%d at top (WiFi:%d BT:%d TF:%d GPS:%d Compass:%d Anchor:%d) [%d/%d headers]",
              HEADER_WIDTH, HEADER_HEIGHT, g_wifi_connected, g_bluetooth_connected,
-             g_tfcard_detected, g_gps_found, g_compass_found, g_anchor_armed);
+             g_tfcard_detected, g_gps_found, g_compass_found, g_anchor_armed,
+             g_header_count, MAX_HEADERS);
     return data->header_bar;
 }
 
@@ -326,27 +339,32 @@ void ui_header_set_tfcard_status(lv_obj_t *header, bool detected) {
 
 /**
  * Update WiFi status icon (left side, position 1)
+ * Updates global state and ALL existing headers
  */
 void ui_header_set_wifi_status(lv_obj_t *header, bool connected) {
     // Update global state
     g_wifi_connected = connected;
+    ESP_LOGI(TAG, "WiFi status changed to: %s", connected ? "CONNECTED" : "DISCONNECTED");
 
-    if (header == NULL) return;
+    // Update ALL headers, not just the one passed in
+    for (int i = 0; i < g_header_count; i++) {
+        if (g_all_headers[i] == NULL) continue;
 
-    ui_header_data_t *data = (ui_header_data_t *)lv_obj_get_user_data(header);
-    if (data == NULL || data->left_icons[1] == NULL) return;
+        ui_header_data_t *data = (ui_header_data_t *)lv_obj_get_user_data(g_all_headers[i]);
+        if (data == NULL || data->left_icons[1] == NULL) continue;
 
-    if (connected) {
-        // WiFi connected - show green icon
-        lv_obj_set_style_bg_color(data->left_icons[1], lv_color_hex(0x00AA00), 0);  // Green
-        lv_obj_set_style_border_color(data->left_icons[1], lv_color_hex(0x008800), 0);
-        ESP_LOGD(TAG, "WiFi status: CONNECTED");
-    } else {
-        // WiFi disconnected - show gray icon
-        lv_obj_set_style_bg_color(data->left_icons[1], lv_color_hex(0x808080), 0);  // Gray
-        lv_obj_set_style_border_color(data->left_icons[1], lv_color_hex(0x555555), 0);
-        ESP_LOGD(TAG, "WiFi status: DISCONNECTED");
+        if (connected) {
+            // WiFi connected - show green icon
+            lv_obj_set_style_bg_color(data->left_icons[1], lv_color_hex(0x00AA00), 0);  // Green
+            lv_obj_set_style_border_color(data->left_icons[1], lv_color_hex(0x008800), 0);
+        } else {
+            // WiFi disconnected - show gray icon
+            lv_obj_set_style_bg_color(data->left_icons[1], lv_color_hex(0x808080), 0);  // Gray
+            lv_obj_set_style_border_color(data->left_icons[1], lv_color_hex(0x555555), 0);
+        }
     }
+
+    ESP_LOGI(TAG, "Updated WiFi icon on %d headers", g_header_count);
 }
 
 /**
