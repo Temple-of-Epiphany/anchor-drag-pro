@@ -1516,6 +1516,7 @@ static lv_obj_t* create_wifi_bluetooth_screen(lv_obj_t *tools_screen_ref) {
 // WiFi screen state
 static lv_obj_t *wifi_network_list = NULL;
 static lv_obj_t *wifi_status_label = NULL;
+static lv_obj_t *wifi_screen_header = NULL;
 static lv_obj_t *wifi_password_screen = NULL;
 static lv_obj_t *wifi_password_ta = NULL;
 static lv_obj_t *wifi_keyboard = NULL;
@@ -1523,6 +1524,54 @@ static char selected_ssid[33] = {0};
 
 // WiFi Setup callbacks (forward declarations)
 static void wifi_network_clicked(lv_event_t *e);
+
+// WiFi status change callback - updates UI when WiFi state changes
+static void wifi_status_changed_cb(wifi_status_t status, void *user_data) {
+    ESP_LOGI(TAG, "WiFi status changed: %d", status);
+
+#if ENABLE_WIFI
+    bool is_connected = (status == WIFI_STATUS_CONNECTED);
+
+    // Update header WiFi icon
+    if (wifi_screen_header != NULL) {
+        ui_header_set_wifi_status(wifi_screen_header, is_connected);
+    }
+
+    // Update status label
+    if (wifi_status_label != NULL) {
+        switch (status) {
+            case WIFI_STATUS_DISCONNECTED:
+                lv_label_set_text(wifi_status_label, "Disconnected");
+                break;
+            case WIFI_STATUS_CONNECTING:
+                lv_label_set_text(wifi_status_label, "Connecting...");
+                break;
+            case WIFI_STATUS_CONNECTED: {
+                char ip_str[16] = {0};
+                char ssid[33] = {0};
+                int8_t rssi = 0;
+                wifi_manager_get_ip(ip_str);
+                wifi_manager_get_ssid(ssid);
+                wifi_manager_get_rssi(&rssi);
+
+                char status_text[128];
+                snprintf(status_text, sizeof(status_text), "Connected to %s - IP: %s (%d dBm)",
+                         ssid, ip_str, rssi);
+                lv_label_set_text(wifi_status_label, status_text);
+                break;
+            }
+            case WIFI_STATUS_FAILED:
+                lv_label_set_text(wifi_status_label, "Connection failed - Check password");
+                break;
+            case WIFI_STATUS_IDLE:
+                lv_label_set_text(wifi_status_label, "Not connected - Scan for networks");
+                break;
+            default:
+                break;
+        }
+    }
+#endif
+}
 
 static void wifi_setup_back_clicked(lv_event_t *e) {
     lv_obj_t *menu_screen = (lv_obj_t *)lv_event_get_user_data(e);
@@ -1724,6 +1773,7 @@ static lv_obj_t* create_wifi_setup_screen(lv_obj_t *menu_screen_ref) {
     // Create header
     lv_obj_t *header = ui_header_create(screen);
     ui_header_set_gps_status(header, false);
+    wifi_screen_header = header;  // Store header reference for status updates
 
     // Title
     lv_obj_t *title = lv_label_create(screen);
@@ -1810,6 +1860,17 @@ static lv_obj_t* create_wifi_setup_screen(lv_obj_t *menu_screen_ref) {
     lv_label_set_text(back_label, "BACK");
     THEME_STYLE_TEXT(back_label, COLOR_TEXT_PRIMARY, FONT_BUTTON_LARGE);
     lv_obj_center(back_label);
+
+#if ENABLE_WIFI
+    // Register WiFi status callback to update UI on connection changes
+    wifi_manager_register_callback(wifi_status_changed_cb, NULL);
+
+    // Update header WiFi icon based on current connection status
+    ui_header_set_wifi_status(header, wifi_manager_is_connected());
+#endif
+
+    // Register header icon callbacks
+    register_header_callbacks(header);
 
     return screen;
 }
