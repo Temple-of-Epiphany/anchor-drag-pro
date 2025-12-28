@@ -1521,7 +1521,9 @@ static lv_obj_t *wifi_password_ta = NULL;
 static lv_obj_t *wifi_keyboard = NULL;
 static char selected_ssid[33] = {0};
 
-// WiFi Setup callbacks
+// WiFi Setup callbacks (forward declarations)
+static void wifi_network_clicked(lv_event_t *e);
+
 static void wifi_setup_back_clicked(lv_event_t *e) {
     lv_obj_t *menu_screen = (lv_obj_t *)lv_event_get_user_data(e);
     if (menu_screen != NULL) {
@@ -1566,6 +1568,8 @@ static void wifi_scan_clicked(lv_event_t *e) {
                     strncpy(ssid_copy, (char*)ap_list[i].ssid, 32);
                     ssid_copy[32] = '\0';
                     lv_obj_set_user_data(btn, ssid_copy);
+                    // Add click handler to show password entry
+                    lv_obj_add_event_cb(btn, wifi_network_clicked, LV_EVENT_CLICKED, NULL);
                 }
             }
 
@@ -1584,6 +1588,52 @@ static void wifi_scan_clicked(lv_event_t *e) {
 #endif
 }
 
+// Password entry callbacks
+static void wifi_password_connect_clicked(lv_event_t *e) {
+    ESP_LOGI(TAG, "WiFi Connect button clicked");
+#if ENABLE_WIFI
+    if (wifi_password_ta == NULL) return;
+
+    const char *password = lv_textarea_get_text(wifi_password_ta);
+    ESP_LOGI(TAG, "Connecting to '%s' with password", selected_ssid);
+
+    // Connect to network with password
+    esp_err_t ret = wifi_manager_connect(selected_ssid, password, true);
+    if (ret == ESP_OK) {
+        ESP_LOGI(TAG, "WiFi connection initiated");
+        if (wifi_status_label) {
+            char status_text[64];
+            snprintf(status_text, sizeof(status_text), "Connecting to %s...", selected_ssid);
+            lv_label_set_text(wifi_status_label, status_text);
+        }
+    } else {
+        ESP_LOGE(TAG, "Failed to initiate connection: %s", esp_err_to_name(ret));
+        if (wifi_status_label) {
+            lv_label_set_text(wifi_status_label, "Connection failed");
+        }
+    }
+
+    // Close password screen
+    if (wifi_password_screen) {
+        lv_obj_del(wifi_password_screen);
+        wifi_password_screen = NULL;
+        wifi_password_ta = NULL;
+        wifi_keyboard = NULL;
+    }
+#endif
+}
+
+static void wifi_password_cancel_clicked(lv_event_t *e) {
+    ESP_LOGI(TAG, "WiFi password entry cancelled");
+    // Close password screen
+    if (wifi_password_screen) {
+        lv_obj_del(wifi_password_screen);
+        wifi_password_screen = NULL;
+        wifi_password_ta = NULL;
+        wifi_keyboard = NULL;
+    }
+}
+
 static void wifi_network_clicked(lv_event_t *e) {
     lv_obj_t *btn = lv_event_get_target(e);
     char *ssid = (char*)lv_obj_get_user_data(btn);
@@ -1593,8 +1643,66 @@ static void wifi_network_clicked(lv_event_t *e) {
         strncpy(selected_ssid, ssid, sizeof(selected_ssid) - 1);
         selected_ssid[sizeof(selected_ssid) - 1] = '\0';
 
-        // TODO: Show password entry screen
-        ESP_LOGI(TAG, "Password entry not yet implemented");
+        // Create password entry screen
+        wifi_password_screen = lv_obj_create(lv_scr_act());
+        lv_obj_set_size(wifi_password_screen, 600, 400);
+        lv_obj_center(wifi_password_screen);
+        lv_obj_set_style_bg_color(wifi_password_screen, lv_color_hex(0x1a1a1a), 0);
+        lv_obj_set_style_border_width(wifi_password_screen, 2, 0);
+        lv_obj_set_style_border_color(wifi_password_screen, lv_color_hex(COLOR_PRIMARY), 0);
+
+        // Title
+        lv_obj_t *title = lv_label_create(wifi_password_screen);
+        lv_label_set_text(title, "Enter WiFi Password");
+        THEME_STYLE_TEXT(title, COLOR_TEXT_PRIMARY, FONT_SUBTITLE);
+        lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 10);
+
+        // SSID label
+        lv_obj_t *ssid_label = lv_label_create(wifi_password_screen);
+        char ssid_text[48];
+        snprintf(ssid_text, sizeof(ssid_text), "Network: %s", selected_ssid);
+        lv_label_set_text(ssid_label, ssid_text);
+        THEME_STYLE_TEXT(ssid_label, COLOR_TEXT_SECONDARY, FONT_BODY_NORMAL);
+        lv_obj_align(ssid_label, LV_ALIGN_TOP_MID, 0, 40);
+
+        // Password text area
+        wifi_password_ta = lv_textarea_create(wifi_password_screen);
+        lv_obj_set_size(wifi_password_ta, 550, 50);
+        lv_obj_align(wifi_password_ta, LV_ALIGN_TOP_MID, 0, 70);
+        lv_textarea_set_placeholder_text(wifi_password_ta, "Password");
+        lv_textarea_set_password_mode(wifi_password_ta, true);
+        lv_textarea_set_one_line(wifi_password_ta, true);
+        lv_obj_set_style_text_font(wifi_password_ta, FONT_BODY_NORMAL, 0);
+
+        // LVGL Keyboard
+        wifi_keyboard = lv_keyboard_create(wifi_password_screen);
+        lv_obj_set_size(wifi_keyboard, 550, 200);
+        lv_obj_align(wifi_keyboard, LV_ALIGN_TOP_MID, 0, 130);
+        lv_keyboard_set_textarea(wifi_keyboard, wifi_password_ta);
+
+        // Connect button
+        lv_obj_t *connect_btn = lv_btn_create(wifi_password_screen);
+        lv_obj_set_size(connect_btn, 250, 50);
+        lv_obj_align(connect_btn, LV_ALIGN_BOTTOM_LEFT, 20, -10);
+        THEME_STYLE_BUTTON(connect_btn, COLOR_PRIMARY);
+        lv_obj_add_event_cb(connect_btn, wifi_password_connect_clicked, LV_EVENT_CLICKED, NULL);
+
+        lv_obj_t *connect_label = lv_label_create(connect_btn);
+        lv_label_set_text(connect_label, "CONNECT");
+        THEME_STYLE_TEXT(connect_label, COLOR_TEXT_PRIMARY, FONT_BUTTON_LARGE);
+        lv_obj_center(connect_label);
+
+        // Cancel button
+        lv_obj_t *cancel_btn = lv_btn_create(wifi_password_screen);
+        lv_obj_set_size(cancel_btn, 250, 50);
+        lv_obj_align(cancel_btn, LV_ALIGN_BOTTOM_RIGHT, -20, -10);
+        THEME_STYLE_BUTTON(cancel_btn, THEME_BTN_CANCEL);
+        lv_obj_add_event_cb(cancel_btn, wifi_password_cancel_clicked, LV_EVENT_CLICKED, NULL);
+
+        lv_obj_t *cancel_label = lv_label_create(cancel_btn);
+        lv_label_set_text(cancel_label, "CANCEL");
+        THEME_STYLE_TEXT(cancel_label, COLOR_TEXT_PRIMARY, FONT_BUTTON_LARGE);
+        lv_obj_center(cancel_label);
     }
 }
 
