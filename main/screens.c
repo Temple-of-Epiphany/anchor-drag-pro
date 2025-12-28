@@ -1583,56 +1583,115 @@ static void wifi_setup_back_clicked(lv_event_t *e) {
 static void wifi_scan_clicked(lv_event_t *e) {
     ESP_LOGI(TAG, "WiFi Scan button clicked");
 #if ENABLE_WIFI
+    // Update status immediately
+    if (wifi_status_label) {
+        lv_label_set_text(wifi_status_label, "Scanning networks...");
+    }
+
+    // Clear existing list before scanning
+    if (wifi_network_list) {
+        lv_obj_clean(wifi_network_list);
+        lv_obj_t *scanning_label = lv_label_create(wifi_network_list);
+        lv_label_set_text(scanning_label, "Scanning...");
+        THEME_STYLE_TEXT(scanning_label, COLOR_TEXT_SECONDARY, FONT_BODY_NORMAL);
+    }
+
+    ESP_LOGI(TAG, "Starting WiFi scan...");
     esp_err_t ret = wifi_manager_scan_start();
-    if (ret == ESP_OK) {
-        ESP_LOGI(TAG, "WiFi scan started");
+
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "WiFi scan start failed: %s (0x%x)", esp_err_to_name(ret), ret);
         if (wifi_status_label) {
-            lv_label_set_text(wifi_status_label, "Scanning networks...");
+            char error_text[64];
+            snprintf(error_text, sizeof(error_text), "Scan failed: %s", esp_err_to_name(ret));
+            lv_label_set_text(wifi_status_label, error_text);
         }
-
-        // Wait a bit for scan to complete
-        vTaskDelay(pdMS_TO_TICKS(3000));
-
-        // Get scan results
-        wifi_ap_record_t ap_list[20];
-        uint16_t num_aps = 0;
-        ret = wifi_manager_scan_get_results(ap_list, 20, &num_aps);
-
-        if (ret == ESP_OK && wifi_network_list) {
-            // Clear existing list
+        if (wifi_network_list) {
             lv_obj_clean(wifi_network_list);
+            lv_obj_t *error_label = lv_label_create(wifi_network_list);
+            lv_label_set_text(error_label, "Scan failed - Check WiFi initialization");
+            THEME_STYLE_TEXT(error_label, COLOR_TEXT_SECONDARY, FONT_BODY_NORMAL);
+        }
+        return;
+    }
 
-            ESP_LOGI(TAG, "Found %d networks", num_aps);
+    ESP_LOGI(TAG, "WiFi scan started, waiting for results...");
 
+    // Wait for scan to complete (blocking - this is a limitation we'll improve later)
+    vTaskDelay(pdMS_TO_TICKS(3000));
+
+    // Get scan results
+    wifi_ap_record_t ap_list[20];
+    uint16_t num_aps = 0;
+    ret = wifi_manager_scan_get_results(ap_list, 20, &num_aps);
+
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "WiFi scan get results failed: %s (0x%x)", esp_err_to_name(ret), ret);
+        if (wifi_status_label) {
+            lv_label_set_text(wifi_status_label, "Failed to get scan results");
+        }
+        if (wifi_network_list) {
+            lv_obj_clean(wifi_network_list);
+            lv_obj_t *error_label = lv_label_create(wifi_network_list);
+            lv_label_set_text(error_label, "Failed to get results");
+            THEME_STYLE_TEXT(error_label, COLOR_TEXT_SECONDARY, FONT_BODY_NORMAL);
+        }
+        return;
+    }
+
+    ESP_LOGI(TAG, "Scan complete - Found %d networks", num_aps);
+
+    // Clear list and add networks
+    if (wifi_network_list) {
+        lv_obj_clean(wifi_network_list);
+
+        if (num_aps == 0) {
+            // No networks found
+            lv_obj_t *no_networks_label = lv_label_create(wifi_network_list);
+            lv_label_set_text(no_networks_label, "No networks found - Try scanning again");
+            THEME_STYLE_TEXT(no_networks_label, COLOR_TEXT_SECONDARY, FONT_BODY_NORMAL);
+
+            if (wifi_status_label) {
+                lv_label_set_text(wifi_status_label, "No networks found");
+            }
+        } else {
             // Add networks to list
             for (int i = 0; i < num_aps; i++) {
                 char item_text[64];
                 snprintf(item_text, sizeof(item_text), "%s (%d dBm)",
                          (char*)ap_list[i].ssid, ap_list[i].rssi);
 
+                ESP_LOGI(TAG, "Network %d: %s", i, item_text);
+
                 lv_obj_t *btn = lv_list_add_btn(wifi_network_list, LV_SYMBOL_WIFI, item_text);
-                // Store SSID in user data for connection
-                char *ssid_copy = malloc(33);
-                if (ssid_copy) {
-                    strncpy(ssid_copy, (char*)ap_list[i].ssid, 32);
-                    ssid_copy[32] = '\0';
-                    lv_obj_set_user_data(btn, ssid_copy);
-                    // Add click handler to show password entry
-                    lv_obj_add_event_cb(btn, wifi_network_clicked, LV_EVENT_CLICKED, NULL);
+                if (btn) {
+                    // Store SSID in user data for connection
+                    char *ssid_copy = malloc(33);
+                    if (ssid_copy) {
+                        strncpy(ssid_copy, (char*)ap_list[i].ssid, 32);
+                        ssid_copy[32] = '\0';
+                        lv_obj_set_user_data(btn, ssid_copy);
+                        // Add click handler to show password entry
+                        lv_obj_add_event_cb(btn, wifi_network_clicked, LV_EVENT_CLICKED, NULL);
+                    }
+                } else {
+                    ESP_LOGE(TAG, "Failed to create button for network %d", i);
                 }
             }
 
+            // Update status
             if (wifi_status_label) {
                 char status_text[64];
-                snprintf(status_text, sizeof(status_text), "Found %d networks", num_aps);
+                snprintf(status_text, sizeof(status_text), "Found %d network%s",
+                         num_aps, num_aps == 1 ? "" : "s");
                 lv_label_set_text(wifi_status_label, status_text);
             }
         }
-    } else {
-        ESP_LOGE(TAG, "WiFi scan failed: %s", esp_err_to_name(ret));
-        if (wifi_status_label) {
-            lv_label_set_text(wifi_status_label, "Scan failed");
-        }
+    }
+#else
+    ESP_LOGW(TAG, "WiFi is disabled in configuration");
+    if (wifi_status_label) {
+        lv_label_set_text(wifi_status_label, "WiFi disabled in configuration");
     }
 #endif
 }
