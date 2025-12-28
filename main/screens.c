@@ -1782,16 +1782,16 @@ static void wifi_network_clicked(lv_event_t *e) {
         lv_textarea_set_one_line(wifi_password_ta, true);
         lv_obj_set_style_text_font(wifi_password_ta, FONT_BODY_NORMAL, 0);
 
-        // LVGL Keyboard
+        // LVGL Keyboard (reduced height to not overlap buttons)
         wifi_keyboard = lv_keyboard_create(wifi_password_screen);
-        lv_obj_set_size(wifi_keyboard, 550, 200);
+        lv_obj_set_size(wifi_keyboard, 550, 170);
         lv_obj_align(wifi_keyboard, LV_ALIGN_TOP_MID, 0, 130);
         lv_keyboard_set_textarea(wifi_keyboard, wifi_password_ta);
 
-        // Connect button
+        // Connect button (positioned after keyboard with gap)
         lv_obj_t *connect_btn = lv_btn_create(wifi_password_screen);
-        lv_obj_set_size(connect_btn, 250, 50);
-        lv_obj_align(connect_btn, LV_ALIGN_BOTTOM_LEFT, 20, -10);
+        lv_obj_set_size(connect_btn, 220, 45);
+        lv_obj_align(connect_btn, LV_ALIGN_TOP_LEFT, 25, 310);
         THEME_STYLE_BUTTON(connect_btn, COLOR_PRIMARY);
         lv_obj_add_event_cb(connect_btn, wifi_password_connect_clicked, LV_EVENT_CLICKED, NULL);
 
@@ -1800,10 +1800,10 @@ static void wifi_network_clicked(lv_event_t *e) {
         THEME_STYLE_TEXT(connect_label, COLOR_TEXT_PRIMARY, FONT_BUTTON_LARGE);
         lv_obj_center(connect_label);
 
-        // Cancel button
+        // Cancel button (positioned after keyboard with gap)
         lv_obj_t *cancel_btn = lv_btn_create(wifi_password_screen);
-        lv_obj_set_size(cancel_btn, 250, 50);
-        lv_obj_align(cancel_btn, LV_ALIGN_BOTTOM_RIGHT, -20, -10);
+        lv_obj_set_size(cancel_btn, 220, 45);
+        lv_obj_align(cancel_btn, LV_ALIGN_TOP_RIGHT, -25, 310);
         THEME_STYLE_BUTTON(cancel_btn, THEME_BTN_CANCEL);
         lv_obj_add_event_cb(cancel_btn, wifi_password_cancel_clicked, LV_EVENT_CLICKED, NULL);
 
