@@ -30,6 +30,14 @@ static const char *TAG = "ui_header";
 #define ICON_MARGIN 15
 #define TITLE_FONT_SIZE 32
 
+// Global icon state (persists across screen changes)
+static bool g_wifi_connected = false;
+static bool g_bluetooth_connected = false;
+static bool g_tfcard_detected = false;
+static bool g_gps_found = false;
+static bool g_compass_found = false;
+static bool g_anchor_armed = false;
+
 // Child objects stored as user data
 typedef struct {
     lv_obj_t *header_bar;      // Main header container
@@ -202,7 +210,17 @@ lv_obj_t* ui_header_create(lv_obj_t *parent) {
     lv_obj_add_flag(data->left_icons[2], LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(data->left_icons[2], tfcard_icon_clicked, LV_EVENT_CLICKED, data->header_bar);
 
-    ESP_LOGI(TAG, "Header bar created: %dx%d at top", HEADER_WIDTH, HEADER_HEIGHT);
+    // Apply current global icon state to newly created header
+    ui_header_set_wifi_status(data->header_bar, g_wifi_connected);
+    ui_header_set_bluetooth_status(data->header_bar, g_bluetooth_connected);
+    ui_header_set_tfcard_status(data->header_bar, g_tfcard_detected);
+    ui_header_set_gps_status(data->header_bar, g_gps_found);
+    ui_header_set_compass_status(data->header_bar, g_compass_found);
+    ui_header_set_anchor_armed(data->header_bar, g_anchor_armed);
+
+    ESP_LOGI(TAG, "Header bar created: %dx%d at top (WiFi:%d BT:%d TF:%d GPS:%d Compass:%d Anchor:%d)",
+             HEADER_WIDTH, HEADER_HEIGHT, g_wifi_connected, g_bluetooth_connected,
+             g_tfcard_detected, g_gps_found, g_compass_found, g_anchor_armed);
     return data->header_bar;
 }
 
@@ -210,6 +228,9 @@ lv_obj_t* ui_header_create(lv_obj_t *parent) {
  * Update GPS status icon (right side, position 1)
  */
 void ui_header_set_gps_status(lv_obj_t *header, bool found) {
+    // Update global state
+    g_gps_found = found;
+
     if (header == NULL) return;
 
     ui_header_data_t *data = (ui_header_data_t *)lv_obj_get_user_data(header);
@@ -232,6 +253,9 @@ void ui_header_set_gps_status(lv_obj_t *header, bool found) {
  * Update Compass status icon (right side, position 0)
  */
 void ui_header_set_compass_status(lv_obj_t *header, bool found) {
+    // Update global state
+    g_compass_found = found;
+
     if (header == NULL) return;
 
     ui_header_data_t *data = (ui_header_data_t *)lv_obj_get_user_data(header);
@@ -254,6 +278,9 @@ void ui_header_set_compass_status(lv_obj_t *header, bool found) {
  * Update Anchor Armed status icon (right side, position 2)
  */
 void ui_header_set_anchor_armed(lv_obj_t *header, bool armed) {
+    // Update global state
+    g_anchor_armed = armed;
+
     if (header == NULL) return;
 
     ui_header_data_t *data = (ui_header_data_t *)lv_obj_get_user_data(header);
@@ -276,6 +303,9 @@ void ui_header_set_anchor_armed(lv_obj_t *header, bool armed) {
  * Update TF Card (SD Card) status icon (left side, position 2)
  */
 void ui_header_set_tfcard_status(lv_obj_t *header, bool detected) {
+    // Update global state
+    g_tfcard_detected = detected;
+
     if (header == NULL) return;
 
     ui_header_data_t *data = (ui_header_data_t *)lv_obj_get_user_data(header);
@@ -298,6 +328,9 @@ void ui_header_set_tfcard_status(lv_obj_t *header, bool detected) {
  * Update WiFi status icon (left side, position 1)
  */
 void ui_header_set_wifi_status(lv_obj_t *header, bool connected) {
+    // Update global state
+    g_wifi_connected = connected;
+
     if (header == NULL) return;
 
     ui_header_data_t *data = (ui_header_data_t *)lv_obj_get_user_data(header);
@@ -320,6 +353,9 @@ void ui_header_set_wifi_status(lv_obj_t *header, bool connected) {
  * Update Bluetooth status icon (left side, position 0)
  */
 void ui_header_set_bluetooth_status(lv_obj_t *header, bool connected) {
+    // Update global state
+    g_bluetooth_connected = connected;
+
     if (header == NULL) return;
 
     ui_header_data_t *data = (ui_header_data_t *)lv_obj_get_user_data(header);
