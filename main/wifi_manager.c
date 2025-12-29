@@ -366,7 +366,31 @@ esp_err_t wifi_manager_clear_credentials(void)
     return ESP_OK;
 }
 
-esp_err_t wifi_manager_ping_gateway(uint32_t timeout_ms)
+// Ping callback data structure
+typedef struct {
+    uint32_t elapsed_time_ms;
+    bool success;
+} ping_result_t;
+
+// Ping callback to capture timing
+static void ping_success_callback(esp_ping_handle_t hdl, void *args)
+{
+    ping_result_t *result = (ping_result_t *)args;
+    uint32_t elapsed_time;
+    esp_ping_get_profile(hdl, ESP_PING_PROF_TIMEGAP, &elapsed_time, sizeof(elapsed_time));
+    result->elapsed_time_ms = elapsed_time;
+    result->success = true;
+    ESP_LOGI(TAG, "Ping success: %lu ms", elapsed_time);
+}
+
+static void ping_timeout_callback(esp_ping_handle_t hdl, void *args)
+{
+    ping_result_t *result = (ping_result_t *)args;
+    result->success = false;
+    ESP_LOGW(TAG, "Ping timeout");
+}
+
+esp_err_t wifi_manager_ping_gateway(uint32_t timeout_ms, uint32_t *ping_time_ms)
 {
     if (!wifi_manager_is_connected()) {
         ESP_LOGW(TAG, "Cannot ping: WiFi not connected");
@@ -390,15 +414,23 @@ esp_err_t wifi_manager_ping_gateway(uint32_t timeout_ms)
     esp_ping_config_t ping_config = ESP_PING_DEFAULT_CONFIG();
     ping_config.target_addr.u_addr.ip4.addr = ip_info.gw.addr;  // Gateway IP
     ping_config.target_addr.type = IPADDR_TYPE_V4;
-    ping_config.count = 3;  // Send 3 pings
+    ping_config.count = 1;  // Send 1 ping for timing
     ping_config.interval_ms = 1000;
     ping_config.timeout_ms = timeout_ms > 0 ? timeout_ms : 5000;
 
+    // Setup callbacks for timing
+    ping_result_t result = {0};
+    esp_ping_callbacks_t callbacks = {
+        .on_ping_success = ping_success_callback,
+        .on_ping_timeout = ping_timeout_callback,
+        .cb_args = &result
+    };
+
     ESP_LOGI(TAG, "Pinging gateway: " IPSTR, IP2STR(&ip_info.gw));
 
-    // Create ping session
+    // Create ping session with callbacks
     esp_ping_handle_t ping_handle;
-    esp_err_t err = esp_ping_new_session(&ping_config, NULL, &ping_handle);
+    esp_err_t err = esp_ping_new_session(&ping_config, &callbacks, &ping_handle);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Failed to create ping session: %s", esp_err_to_name(err));
         return err;
@@ -412,13 +444,20 @@ esp_err_t wifi_manager_ping_gateway(uint32_t timeout_ms)
         return err;
     }
 
-    // Wait for pings to complete (3 pings * 1000ms interval + timeout)
-    vTaskDelay(pdMS_TO_TICKS(4000));
+    // Wait for ping to complete
+    vTaskDelay(pdMS_TO_TICKS(timeout_ms > 0 ? timeout_ms + 1000 : 6000));
 
     // Stop and cleanup
     esp_ping_stop(ping_handle);
     esp_ping_delete_session(ping_handle);
 
-    ESP_LOGI(TAG, "Ping test completed");
-    return ESP_OK;
+    // Return timing if requested
+    if (ping_time_ms != NULL && result.success) {
+        *ping_time_ms = result.elapsed_time_ms;
+    }
+
+    ESP_LOGI(TAG, "Ping test completed: %s (%lu ms)",
+             result.success ? "success" : "failed", result.elapsed_time_ms);
+
+    return result.success ? ESP_OK : ESP_FAIL;
 }

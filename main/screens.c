@@ -36,9 +36,10 @@ static const char *TAG = "screens";
 // Static storage for page callback (used for START screen button navigation)
 static ui_footer_page_cb_t g_page_callback = NULL;
 
-// Forward declarations for header icon callbacks
+// Forward declarations
 static lv_obj_t* create_wifi_setup_screen(lv_obj_t *menu_screen_ref);
 static lv_obj_t* create_bluetooth_setup_screen(lv_obj_t *menu_screen_ref);
+static lv_obj_t* create_tool_button(lv_obj_t *parent, const char *label, int x, int y, lv_event_cb_t callback);
 static lv_obj_t* create_tfcard_screen(lv_obj_t *tools_screen_ref);
 
 /**
@@ -372,24 +373,78 @@ lv_obj_t* create_pgn_screen(ui_footer_page_cb_t page_callback, lv_obj_t **footer
 /**
  * Button callbacks for CONFIG screen
  */
-static void config_save_clicked(lv_event_t *e) {
-    ESP_LOGI(TAG, "CONFIG: Save button clicked");
+// CONFIG screen button callbacks
+// Static reference to NMEA logging button for color toggle
+static lv_obj_t *g_nmea_log_btn = NULL;
+static bool g_nmea_logging_enabled = false;  // Global state
+
+static void config_datetime_clicked(lv_event_t *e) {
+    ESP_LOGI(TAG, "CONFIG: Date/Time Settings clicked - opening datetime settings screen");
+    lv_obj_t *datetime_screen = create_datetime_settings_screen(NULL, NULL, NULL);
+    lv_scr_load(datetime_screen);
 }
 
-static void config_cancel_clicked(lv_event_t *e) {
-    ESP_LOGI(TAG, "CONFIG: Cancel button clicked");
+static void config_gps_source_clicked(lv_event_t *e) {
+    ESP_LOGI(TAG, "CONFIG: GPS Source configuration clicked");
+    lv_obj_t *mbox = lv_msgbox_create(lv_scr_act(), "GPS Source",
+        "GPS source configuration\ncoming soon", NULL, true);
+    lv_obj_center(mbox);
+}
+
+static void config_btn3_clicked(lv_event_t *e) {
+    ESP_LOGI(TAG, "CONFIG: Button 3 clicked");
+}
+
+static void config_btn4_clicked(lv_event_t *e) {
+    ESP_LOGI(TAG, "CONFIG: Button 4 clicked");
+}
+
+static void config_btn5_clicked(lv_event_t *e) {
+    ESP_LOGI(TAG, "CONFIG: Button 5 clicked");
+}
+
+static void config_btn6_clicked(lv_event_t *e) {
+    ESP_LOGI(TAG, "CONFIG: Button 6 clicked");
+}
+
+static void config_btn7_clicked(lv_event_t *e) {
+    ESP_LOGI(TAG, "CONFIG: Button 7 clicked");
+}
+
+static void config_nmea_log_clicked(lv_event_t *e) {
+    ESP_LOGI(TAG, "CONFIG: NMEA Logging toggle clicked");
+
+    // Toggle state
+    g_nmea_logging_enabled = !g_nmea_logging_enabled;
+
+    // Update button color
+    if (g_nmea_log_btn != NULL) {
+        if (g_nmea_logging_enabled) {
+            // Green when enabled
+            lv_obj_set_style_bg_color(g_nmea_log_btn, lv_color_hex(0x00AA00), 0);
+            ESP_LOGI(TAG, "NMEA logging ENABLED");
+        } else {
+            // Gray when disabled
+            lv_obj_set_style_bg_color(g_nmea_log_btn, lv_color_hex(0x808080), 0);
+            ESP_LOGI(TAG, "NMEA logging DISABLED");
+        }
+    }
+}
+
+static void config_btn9_clicked(lv_event_t *e) {
+    ESP_LOGI(TAG, "CONFIG: Button 9 clicked");
 }
 
 /**
- * CONFIG SCREEN - Configuration Settings
+ * CONFIG SCREEN - Configuration Settings (9-button grid layout)
  */
 lv_obj_t* create_config_screen(ui_footer_page_cb_t page_callback, lv_obj_t **footer_out) {
     lv_obj_t *screen = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(screen, lv_color_hex(THEME_SCREEN_BG), 0);
 
-    // Create header bar with satellite icon
+    // Create header bar
     lv_obj_t *header = ui_header_create(screen);
-    ui_header_set_gps_status(header, false);  // Default to GPS not found
+    ui_header_set_gps_status(header, false);
 
     // Title (positioned below header)
     lv_obj_t *title = lv_label_create(screen);
@@ -397,55 +452,69 @@ lv_obj_t* create_config_screen(ui_footer_page_cb_t page_callback, lv_obj_t **foo
     THEME_STYLE_TEXT(title, THEME_TITLE_COLOR, FONT_TITLE);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, HEADER_HEIGHT + SPACING_MARGIN_SMALL);
 
-    // Configuration panel
-    lv_obj_t *config_panel = lv_obj_create(screen);
-    lv_obj_set_size(config_panel, 740, 240);
-    lv_obj_align(config_panel, LV_ALIGN_TOP_MID, 0, 120);
-    THEME_STYLE_PANEL(config_panel, THEME_PANEL_BG_DARK);
-    lv_obj_set_scrollbar_mode(config_panel, LV_SCROLLBAR_MODE_AUTO);
+    // Define 9 config buttons (placeholders with numbers for now)
+    typedef struct {
+        const char *label;
+        lv_event_cb_t callback;
+    } config_button_t;
 
-    lv_obj_t *config_label = lv_label_create(config_panel);
-    lv_label_set_text(config_label,
-        "ALARM SETTINGS\n"
-        "  Distance Threshold: 50 ft     [+][-]\n"
-        "  Units: Feet\n\n"
-        "N2K DATA SETTINGS\n"
-        "  GPS PGN: 129029               [Edit]\n"
-        "  Compass PGN: 127250           [Edit]\n"
-        "  External GPS: [ ] Enable\n\n"
-        "DISPLAY SETTINGS\n"
-        "  Background: Marine Blue       [HEX]\n"
-        "  Font Color: White             [HEX]\n\n"
-        "SYSTEM SETTINGS\n"
-        "  Boat Name: [My Boat_______]\n"
-        "  WiFi: Disabled                [Enable]\n"
-        "  Bluetooth: Enabled            [Disable]\n"
-        "  BT Pairing Code: [1234____]");
-    THEME_STYLE_TEXT(config_label, COLOR_TEXT_PRIMARY, FONT_BODY_NORMAL);
-    lv_obj_align(config_label, LV_ALIGN_TOP_LEFT, 10, 10);
+    config_button_t buttons[] = {
+        {"Date/Time", config_datetime_clicked},
+        {"GPS", config_gps_source_clicked},
+        {"3", config_btn3_clicked},
+        {"4", config_btn4_clicked},
+        {"5", config_btn5_clicked},
+        {"6", config_btn6_clicked},
+        {"7", config_btn7_clicked},
+        {"NMEA\nLOG", config_nmea_log_clicked},
+        {"9", config_btn9_clicked},
+    };
+    int button_count = sizeof(buttons) / sizeof(buttons[0]);
 
-    // Save and Cancel buttons
-    lv_obj_t *save_btn = lv_btn_create(screen);
-    lv_obj_set_size(save_btn, 180, BUTTON_HEIGHT_MEDIUM);
-    lv_obj_align(save_btn, LV_ALIGN_BOTTOM_LEFT, 200, -80);
-    THEME_STYLE_BUTTON(save_btn, THEME_BTN_SUCCESS);
-    lv_obj_add_event_cb(save_btn, config_save_clicked, LV_EVENT_CLICKED, NULL);
+    // Grid layout calculation (3x3 grid)
+    const int screen_width = 800;
+    const int available_height = 480 - 80 - 60 - 40;  // Screen - header - footer - title
+    const int button_width = BUTTON_WIDTH_SMALL;
+    const int button_height = 70;
 
-    lv_obj_t *save_label = lv_label_create(save_btn);
-    lv_label_set_text(save_label, "SAVE");
-    THEME_STYLE_TEXT(save_label, COLOR_TEXT_PRIMARY, FONT_BUTTON_SMALL);
-    lv_obj_center(save_label);
+    int cols = 3;  // 3x3 grid
+    int rows = 3;
 
-    lv_obj_t *cancel_btn = lv_btn_create(screen);
-    lv_obj_set_size(cancel_btn, 180, BUTTON_HEIGHT_MEDIUM);
-    lv_obj_align(cancel_btn, LV_ALIGN_BOTTOM_RIGHT, -200, -80);
-    THEME_STYLE_BUTTON(cancel_btn, THEME_BTN_CANCEL);
-    lv_obj_add_event_cb(cancel_btn, config_cancel_clicked, LV_EVENT_CLICKED, NULL);
+    // Calculate spacing
+    int total_button_width = cols * button_width;
+    int total_button_height = rows * button_height;
+    int spacing_x = (screen_width - total_button_width - 60) / (cols + 1);
+    int spacing_y = (available_height - total_button_height) / (rows + 1);
 
-    lv_obj_t *cancel_label = lv_label_create(cancel_btn);
-    lv_label_set_text(cancel_label, "CANCEL");
-    THEME_STYLE_TEXT(cancel_label, COLOR_TEXT_PRIMARY, FONT_BUTTON_SMALL);
-    lv_obj_center(cancel_label);
+    // Ensure minimum spacing
+    if (spacing_x < 20) spacing_x = 20;
+    if (spacing_y < 20) spacing_y = 20;
+
+    // Starting position (centered)
+    int grid_width = total_button_width + (cols - 1) * spacing_x;
+    int grid_height = total_button_height + (rows - 1) * spacing_y;
+    int start_x = (screen_width - grid_width) / 2;
+    int start_y = 140;  // Below title
+
+    ESP_LOGI(TAG, "CONFIG grid: %d buttons in %dx%d layout, spacing: %dx%d",
+             button_count, rows, cols, spacing_x, spacing_y);
+
+    // Create buttons in 3x3 grid
+    for (int i = 0; i < button_count; i++) {
+        int row = i / cols;
+        int col = i % cols;
+        int x = start_x + col * (button_width + spacing_x);
+        int y = start_y + row * (button_height + spacing_y);
+
+        lv_obj_t *btn = create_tool_button(screen, buttons[i].label, x, y, buttons[i].callback);
+
+        // Store reference to NMEA LOG button (index 7 = button 8) and set initial color
+        if (i == 7) {
+            g_nmea_log_btn = btn;
+            // Set initial color based on state (starts disabled/gray)
+            lv_obj_set_style_bg_color(g_nmea_log_btn, lv_color_hex(0x808080), 0);
+        }
+    }
 
     // Create footer
     lv_obj_t *footer = ui_footer_create(screen, PAGE_CONFIG, page_callback);
@@ -457,7 +526,7 @@ lv_obj_t* create_config_screen(ui_footer_page_cb_t page_callback, lv_obj_t **foo
         *footer_out = footer;
     }
 
-    ESP_LOGI(TAG, "Created CONFIG screen with settings");
+    ESP_LOGI(TAG, "Created CONFIG screen with %d configuration buttons", button_count);
     return screen;
 }
 
@@ -1583,6 +1652,11 @@ static void wifi_setup_back_clicked(lv_event_t *e) {
 static void wifi_scan_clicked(lv_event_t *e) {
     ESP_LOGI(TAG, "WiFi Scan button clicked");
 #if ENABLE_WIFI
+    // Show modal popup
+    lv_obj_t *mbox = lv_msgbox_create(lv_scr_act(), "WiFi Scan",
+        "Scanning for WiFi networks...\nPlease wait.", NULL, false);
+    lv_obj_center(mbox);
+
     // Update status immediately
     if (wifi_status_label) {
         lv_label_set_text(wifi_status_label, "Scanning networks...");
@@ -1601,6 +1675,15 @@ static void wifi_scan_clicked(lv_event_t *e) {
 
     if (ret != ESP_OK) {
         ESP_LOGE(TAG, "WiFi scan start failed: %s (0x%x)", esp_err_to_name(ret), ret);
+
+        // Close scanning popup
+        lv_obj_del(mbox);
+
+        // Show error popup
+        lv_obj_t *error_mbox = lv_msgbox_create(lv_scr_act(), "Scan Failed",
+            "WiFi scan failed.\nCheck WiFi initialization.", NULL, true);
+        lv_obj_center(error_mbox);
+
         if (wifi_status_label) {
             char error_text[64];
             snprintf(error_text, sizeof(error_text), "Scan failed: %s", esp_err_to_name(ret));
@@ -1619,6 +1702,9 @@ static void wifi_scan_clicked(lv_event_t *e) {
 
     // Wait for scan to complete (blocking - this is a limitation we'll improve later)
     vTaskDelay(pdMS_TO_TICKS(3000));
+
+    // Close scanning popup
+    lv_obj_del(mbox);
 
     // Get scan results
     wifi_ap_record_t ap_list[20];
@@ -1827,16 +1913,41 @@ static void wifi_disconnect_clicked(lv_event_t *e) {
 static void wifi_test_clicked(lv_event_t *e) {
     ESP_LOGI(TAG, "WiFi Test Connection button clicked");
 #if ENABLE_WIFI
+    // Show modal popup
+    lv_obj_t *mbox = lv_msgbox_create(lv_scr_act(), "WiFi Test",
+        "Pinging gateway...\nPlease wait.", NULL, false);
+    lv_obj_center(mbox);
+
     if (wifi_status_label) {
         lv_label_set_text(wifi_status_label, "Testing connection...");
     }
 
-    esp_err_t ret = wifi_manager_ping_gateway(5000);
+    uint32_t ping_time_ms = 0;
+    esp_err_t ret = wifi_manager_ping_gateway(5000, &ping_time_ms);
 
-    if (wifi_status_label) {
-        if (ret == ESP_OK) {
-            lv_label_set_text(wifi_status_label, "Ping successful - Gateway reachable!");
-        } else {
+    // Close "pinging" popup
+    lv_obj_del(mbox);
+
+    // Show result popup with ping time
+    char result_text[128];
+    if (ret == ESP_OK) {
+        snprintf(result_text, sizeof(result_text),
+                 "Gateway reachable!\nPing time: %lu ms", ping_time_ms);
+        lv_obj_t *success_mbox = lv_msgbox_create(lv_scr_act(), "Ping Successful",
+            result_text, NULL, true);
+        lv_obj_center(success_mbox);
+
+        if (wifi_status_label) {
+            char status_text[64];
+            snprintf(status_text, sizeof(status_text), "Ping successful (%lu ms)", ping_time_ms);
+            lv_label_set_text(wifi_status_label, status_text);
+        }
+    } else {
+        lv_obj_t *fail_mbox = lv_msgbox_create(lv_scr_act(), "Ping Failed",
+            "Gateway not reachable.\nCheck connection.", NULL, true);
+        lv_obj_center(fail_mbox);
+
+        if (wifi_status_label) {
             lv_label_set_text(wifi_status_label, "Ping failed - Check connection");
         }
     }
