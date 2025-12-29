@@ -185,19 +185,22 @@ lv_obj_t* ui_header_create(lv_obj_t *parent) {
     lv_obj_set_style_border_color(data->left_icons[2], lv_color_hex(0x555555), 0);
 
     // RIGHT ICONS (Navigation/Sensors)
-    // Right icon 2 - Anchor Armed status (third from right)
-    lv_label_set_text(data->icon_labels[5], "\xE2\x9A\x93");  // ⚓ anchor emoji (UTF-8)
-    lv_obj_set_style_bg_color(data->right_icons[2], lv_color_hex(0x808080), 0);  // Gray (not armed)
+    // Icon order left-to-right: Bluetooth, WiFi, TF/SD Card, N2K, Compass, GPS
+
+    // Right icon 2 - N2K status (4th icon from left, 3rd from right)
+    lv_label_set_text(data->icon_labels[5], "N2K");
+    lv_obj_set_style_text_font(data->icon_labels[5], &lv_font_montserrat_14, 0);
+    lv_obj_set_style_bg_color(data->right_icons[2], lv_color_hex(0x808080), 0);  // Gray (not connected)
     lv_obj_set_style_border_color(data->right_icons[2], lv_color_hex(0x555555), 0);
 
-    // Right icon 0 - Compass/Helm (second from right)
-    lv_label_set_text(data->icon_labels[3], "\xE2\x8E\x88");  // ⎈ Helm Symbol U+2388 (UTF-8)
-    lv_obj_set_style_text_font(data->icon_labels[3], &apple_symbols_32, 0);
-    lv_obj_set_style_bg_color(data->right_icons[0], lv_color_hex(0x808080), 0);  // Gray (not found)
-
-    // Right icon 1 - GPS/Satellite (rightmost)
-    lv_label_set_text(data->icon_labels[4], "\xF0\x9F\x9B\xB0");  // 🛰️ satellite emoji (UTF-8)
+    // Right icon 1 - Compass/Helm (5th icon from left, 2nd from right)
+    lv_label_set_text(data->icon_labels[4], "\xE2\x8E\x88");  // ⎈ Helm Symbol U+2388 (UTF-8)
+    lv_obj_set_style_text_font(data->icon_labels[4], &apple_symbols_32, 0);
     lv_obj_set_style_bg_color(data->right_icons[1], lv_color_hex(0x808080), 0);  // Gray (not found)
+
+    // Right icon 0 - GPS/Satellite (6th icon from left, rightmost)
+    lv_label_set_text(data->icon_labels[3], "\xF0\x9F\x9B\xB0");  // 🛰️ satellite emoji (UTF-8)
+    lv_obj_set_style_bg_color(data->right_icons[0], lv_color_hex(0x808080), 0);  // Gray (not found)
 
     // Store data as user data (use header_bar as the handle)
     lv_obj_set_user_data(data->header_bar, data);
@@ -238,7 +241,7 @@ lv_obj_t* ui_header_create(lv_obj_t *parent) {
 }
 
 /**
- * Update GPS status icon (right side, position 1)
+ * Update GPS status icon (right side, position 0 - rightmost)
  */
 void ui_header_set_gps_status(lv_obj_t *header, bool found) {
     // Update global state
@@ -247,23 +250,23 @@ void ui_header_set_gps_status(lv_obj_t *header, bool found) {
     if (header == NULL) return;
 
     ui_header_data_t *data = (ui_header_data_t *)lv_obj_get_user_data(header);
-    if (data == NULL || data->right_icons[1] == NULL) return;
+    if (data == NULL || data->right_icons[0] == NULL) return;
 
     if (found) {
         // GPS found - show green icon
-        lv_obj_set_style_bg_color(data->right_icons[1], lv_color_hex(0x00FF00), 0);  // Green
-        lv_obj_set_style_border_color(data->right_icons[1], lv_color_hex(0x00AA00), 0);
+        lv_obj_set_style_bg_color(data->right_icons[0], lv_color_hex(0x00FF00), 0);  // Green
+        lv_obj_set_style_border_color(data->right_icons[0], lv_color_hex(0x00AA00), 0);
         ESP_LOGD(TAG, "GPS status: FOUND");
     } else {
         // GPS not found - show gray icon
-        lv_obj_set_style_bg_color(data->right_icons[1], lv_color_hex(0x808080), 0);  // Gray
-        lv_obj_set_style_border_color(data->right_icons[1], lv_color_hex(0x555555), 0);
+        lv_obj_set_style_bg_color(data->right_icons[0], lv_color_hex(0x808080), 0);  // Gray
+        lv_obj_set_style_border_color(data->right_icons[0], lv_color_hex(0x555555), 0);
         ESP_LOGD(TAG, "GPS status: NOT FOUND");
     }
 }
 
 /**
- * Update Compass status icon (right side, position 0)
+ * Update Compass status icon (right side, position 1 - 5th from left)
  */
 void ui_header_set_compass_status(lv_obj_t *header, bool found) {
     // Update global state
@@ -272,44 +275,52 @@ void ui_header_set_compass_status(lv_obj_t *header, bool found) {
     if (header == NULL) return;
 
     ui_header_data_t *data = (ui_header_data_t *)lv_obj_get_user_data(header);
-    if (data == NULL || data->right_icons[0] == NULL) return;
+    if (data == NULL || data->right_icons[1] == NULL) return;
 
     if (found) {
         // Compass found - show green icon
-        lv_obj_set_style_bg_color(data->right_icons[0], lv_color_hex(0x00AA00), 0);  // Green
-        lv_obj_set_style_border_color(data->right_icons[0], lv_color_hex(0x008800), 0);
+        lv_obj_set_style_bg_color(data->right_icons[1], lv_color_hex(0x00AA00), 0);  // Green
+        lv_obj_set_style_border_color(data->right_icons[1], lv_color_hex(0x008800), 0);
         ESP_LOGD(TAG, "Compass status: FOUND");
     } else {
         // Compass not found - show gray icon
-        lv_obj_set_style_bg_color(data->right_icons[0], lv_color_hex(0x808080), 0);  // Gray
-        lv_obj_set_style_border_color(data->right_icons[0], lv_color_hex(0x555555), 0);
+        lv_obj_set_style_bg_color(data->right_icons[1], lv_color_hex(0x808080), 0);  // Gray
+        lv_obj_set_style_border_color(data->right_icons[1], lv_color_hex(0x555555), 0);
         ESP_LOGD(TAG, "Compass status: NOT FOUND");
     }
 }
 
 /**
- * Update Anchor Armed status icon (right side, position 2)
+ * Update N2K status icon (right side, position 2 - 4th from left)
  */
-void ui_header_set_anchor_armed(lv_obj_t *header, bool armed) {
+void ui_header_set_n2k_status(lv_obj_t *header, bool connected) {
     // Update global state
-    g_anchor_armed = armed;
+    g_anchor_armed = connected;  // Reusing global variable for N2K
 
     if (header == NULL) return;
 
     ui_header_data_t *data = (ui_header_data_t *)lv_obj_get_user_data(header);
     if (data == NULL || data->right_icons[2] == NULL) return;
 
-    if (armed) {
-        // Anchor armed - show green icon
+    if (connected) {
+        // N2K connected - show green icon
         lv_obj_set_style_bg_color(data->right_icons[2], lv_color_hex(0x00AA00), 0);  // Green
         lv_obj_set_style_border_color(data->right_icons[2], lv_color_hex(0x008800), 0);
-        ESP_LOGD(TAG, "Anchor status: ARMED");
+        ESP_LOGD(TAG, "N2K status: CONNECTED");
     } else {
-        // Anchor not armed - show gray icon
+        // N2K not connected - show gray icon
         lv_obj_set_style_bg_color(data->right_icons[2], lv_color_hex(0x808080), 0);  // Gray
         lv_obj_set_style_border_color(data->right_icons[2], lv_color_hex(0x555555), 0);
-        ESP_LOGD(TAG, "Anchor status: NOT ARMED");
+        ESP_LOGD(TAG, "N2K status: NOT CONNECTED");
     }
+}
+
+/**
+ * Update Anchor Armed status icon (deprecated - keeping for backward compatibility)
+ * Now controls N2K status instead
+ */
+void ui_header_set_anchor_armed(lv_obj_t *header, bool armed) {
+    ui_header_set_n2k_status(header, armed);
 }
 
 /**

@@ -374,9 +374,19 @@ lv_obj_t* create_pgn_screen(ui_footer_page_cb_t page_callback, lv_obj_t **footer
  * Button callbacks for CONFIG screen
  */
 // CONFIG screen button callbacks
-// Static reference to NMEA logging button for color toggle
+// Static references for toggle buttons
+static lv_obj_t *g_led_btn = NULL;
+static lv_obj_t *g_mute_btn = NULL;
+static lv_obj_t *g_buzzer_btn = NULL;
 static lv_obj_t *g_nmea_log_btn = NULL;
-static bool g_nmea_logging_enabled = false;  // Global state
+static lv_obj_t *g_relay_btn = NULL;
+
+// Global states for toggles
+static bool g_led_enabled = false;
+static bool g_mute_enabled = false;
+static bool g_buzzer_enabled = false;
+static bool g_nmea_logging_enabled = false;
+static bool g_relay_enabled = false;
 
 static void config_datetime_clicked(lv_event_t *e) {
     ESP_LOGI(TAG, "CONFIG: Date/Time Settings clicked - opening datetime settings screen");
@@ -384,27 +394,176 @@ static void config_datetime_clicked(lv_event_t *e) {
     lv_scr_load(datetime_screen);
 }
 
-static void config_gps_source_clicked(lv_event_t *e) {
-    ESP_LOGI(TAG, "CONFIG: GPS Source configuration clicked");
-    lv_obj_t *mbox = lv_msgbox_create(lv_scr_act(), "GPS Source",
-        "GPS source configuration\ncoming soon", NULL, true);
-    lv_obj_center(mbox);
+// GPS source selection state
+static int g_gps_source_selected = 0;  // 0=AUTO, 1=N2K, 2=0183, 3=EXTERNAL, 4=URL
+static int g_gps_source_temp = 0;       // Temporary selection in modal
+
+static void gps_source_modal_close(lv_event_t *e) {
+    lv_obj_t *modal = (lv_obj_t *)lv_event_get_user_data(e);
+    if (modal) lv_obj_del(modal);
 }
 
-static void config_btn3_clicked(lv_event_t *e) {
-    ESP_LOGI(TAG, "CONFIG: Button 3 clicked");
+static void gps_source_save_clicked(lv_event_t *e) {
+    // Save the temporary selection to actual selection
+    g_gps_source_selected = g_gps_source_temp;
+    ESP_LOGI(TAG, "GPS Source saved: %d", g_gps_source_selected);
+    gps_source_modal_close(e);
+}
+
+static void gps_source_auto_clicked(lv_event_t *e) {
+    g_gps_source_temp = 0;
+    ESP_LOGI(TAG, "GPS Source: AUTO selected (scan order: N2K->0183->EXTERNAL->URL)");
+}
+
+static void gps_source_n2k_clicked(lv_event_t *e) {
+    g_gps_source_temp = 1;
+    ESP_LOGI(TAG, "GPS Source: N2K selected");
+}
+
+static void gps_source_0183_clicked(lv_event_t *e) {
+    g_gps_source_temp = 2;
+    ESP_LOGI(TAG, "GPS Source: 0183 selected");
+}
+
+static void gps_source_external_clicked(lv_event_t *e) {
+    g_gps_source_temp = 3;
+    ESP_LOGI(TAG, "GPS Source: EXTERNAL selected");
+}
+
+static void gps_source_url_clicked(lv_event_t *e) {
+    g_gps_source_temp = 4;
+    ESP_LOGI(TAG, "GPS Source: URL selected");
+}
+
+static void config_gps_source_clicked(lv_event_t *e) {
+    ESP_LOGI(TAG, "CONFIG: GPS Source configuration clicked");
+
+    // Initialize temp selection to current selection
+    g_gps_source_temp = g_gps_source_selected;
+
+    // Create modal screen overlay (increased height for Save/Cancel buttons)
+    lv_obj_t *modal = lv_obj_create(lv_scr_act());
+    lv_obj_set_size(modal, 500, 440);
+    lv_obj_center(modal);
+    lv_obj_set_style_bg_color(modal, lv_color_hex(THEME_PANEL_BG_DARK), 0);
+    lv_obj_set_style_border_color(modal, lv_color_hex(0x00AA00), 0);
+    lv_obj_set_style_border_width(modal, 2, 0);
+
+    // Title
+    lv_obj_t *title = lv_label_create(modal);
+    lv_label_set_text(title, "GPS Source");
+    THEME_STYLE_TEXT(title, THEME_TITLE_COLOR, FONT_TITLE);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 10);
+
+    // Description
+    lv_obj_t *desc = lv_label_create(modal);
+    lv_label_set_text(desc, "AUTO scans: N2K > 0183 > EXTERNAL > URL");
+    THEME_STYLE_TEXT(desc, COLOR_TEXT_SECONDARY, FONT_BODY_SMALL);
+    lv_obj_align(desc, LV_ALIGN_TOP_MID, 0, 40);
+
+    // Create 5 buttons for GPS sources
+    const char *labels[] = {"AUTO", "N2K", "0183", "EXTERNAL", "URL"};
+    lv_event_cb_t callbacks[] = {
+        gps_source_auto_clicked,
+        gps_source_n2k_clicked,
+        gps_source_0183_clicked,
+        gps_source_external_clicked,
+        gps_source_url_clicked
+    };
+
+    for (int i = 0; i < 5; i++) {
+        lv_obj_t *btn = lv_btn_create(modal);
+        lv_obj_set_size(btn, 200, 50);
+        lv_obj_align(btn, LV_ALIGN_TOP_MID, 0, 75 + i * 55);
+
+        // Highlight selected source
+        if (i == g_gps_source_selected) {
+            lv_obj_set_style_bg_color(btn, lv_color_hex(0x00AA00), 0);  // Green
+        } else {
+            THEME_STYLE_BUTTON(btn, THEME_BTN_PRIMARY);
+        }
+
+        lv_obj_add_event_cb(btn, callbacks[i], LV_EVENT_CLICKED, modal);
+
+        lv_obj_t *label = lv_label_create(btn);
+        lv_label_set_text(label, labels[i]);
+        THEME_STYLE_TEXT(label, COLOR_TEXT_PRIMARY, FONT_BUTTON_LARGE);
+        lv_obj_center(label);
+    }
+
+    // Save and Cancel buttons (side by side at bottom)
+    // Save button (left)
+    lv_obj_t *save_btn = lv_btn_create(modal);
+    lv_obj_set_size(save_btn, 150, 45);
+    lv_obj_align(save_btn, LV_ALIGN_BOTTOM_LEFT, 50, -10);
+    lv_obj_set_style_bg_color(save_btn, lv_color_hex(0x00AA00), 0);  // Green
+    lv_obj_add_event_cb(save_btn, gps_source_save_clicked, LV_EVENT_CLICKED, modal);
+
+    lv_obj_t *save_label = lv_label_create(save_btn);
+    lv_label_set_text(save_label, "SAVE");
+    THEME_STYLE_TEXT(save_label, COLOR_TEXT_PRIMARY, FONT_BUTTON_SMALL);
+    lv_obj_center(save_label);
+
+    // Cancel button (right)
+    lv_obj_t *cancel_btn = lv_btn_create(modal);
+    lv_obj_set_size(cancel_btn, 150, 45);
+    lv_obj_align(cancel_btn, LV_ALIGN_BOTTOM_RIGHT, -50, -10);
+    THEME_STYLE_BUTTON(cancel_btn, THEME_BTN_CANCEL);
+    lv_obj_add_event_cb(cancel_btn, gps_source_modal_close, LV_EVENT_CLICKED, modal);
+
+    lv_obj_t *cancel_label = lv_label_create(cancel_btn);
+    lv_label_set_text(cancel_label, "CANCEL");
+    THEME_STYLE_TEXT(cancel_label, COLOR_TEXT_PRIMARY, FONT_BUTTON_SMALL);
+    lv_obj_center(cancel_label);
+}
+
+static void config_led_clicked(lv_event_t *e) {
+    ESP_LOGI(TAG, "CONFIG: LED toggle clicked");
+    g_led_enabled = !g_led_enabled;
+
+    if (g_led_btn != NULL) {
+        if (g_led_enabled) {
+            lv_obj_set_style_bg_color(g_led_btn, lv_color_hex(0x00AA00), 0);  // Green
+            ESP_LOGI(TAG, "LED ENABLED");
+        } else {
+            lv_obj_set_style_bg_color(g_led_btn, lv_color_hex(0x808080), 0);  // Gray
+            ESP_LOGI(TAG, "LED DISABLED");
+        }
+    }
 }
 
 static void config_btn4_clicked(lv_event_t *e) {
     ESP_LOGI(TAG, "CONFIG: Button 4 clicked");
 }
 
-static void config_btn5_clicked(lv_event_t *e) {
-    ESP_LOGI(TAG, "CONFIG: Button 5 clicked");
+static void config_mute_clicked(lv_event_t *e) {
+    ESP_LOGI(TAG, "CONFIG: Mute toggle clicked");
+    g_mute_enabled = !g_mute_enabled;
+
+    if (g_mute_btn != NULL) {
+        if (g_mute_enabled) {
+            lv_obj_set_style_bg_color(g_mute_btn, lv_color_hex(0x00AA00), 0);  // Green
+            ESP_LOGI(TAG, "MUTE ENABLED");
+        } else {
+            lv_obj_set_style_bg_color(g_mute_btn, lv_color_hex(0x808080), 0);  // Gray
+            ESP_LOGI(TAG, "MUTE DISABLED");
+        }
+    }
 }
 
-static void config_btn6_clicked(lv_event_t *e) {
-    ESP_LOGI(TAG, "CONFIG: Button 6 clicked");
+static void config_buzzer_clicked(lv_event_t *e) {
+    ESP_LOGI(TAG, "CONFIG: Buzzer toggle clicked");
+    g_buzzer_enabled = !g_buzzer_enabled;
+
+    if (g_buzzer_btn != NULL) {
+        if (g_buzzer_enabled) {
+            lv_obj_set_style_bg_color(g_buzzer_btn, lv_color_hex(0x00AA00), 0);  // Green
+            ESP_LOGI(TAG, "BUZZER ENABLED");
+        } else {
+            lv_obj_set_style_bg_color(g_buzzer_btn, lv_color_hex(0x808080), 0);  // Gray
+            ESP_LOGI(TAG, "BUZZER DISABLED");
+        }
+    }
 }
 
 static void config_btn7_clicked(lv_event_t *e) {
@@ -431,8 +590,19 @@ static void config_nmea_log_clicked(lv_event_t *e) {
     }
 }
 
-static void config_btn9_clicked(lv_event_t *e) {
-    ESP_LOGI(TAG, "CONFIG: Button 9 clicked");
+static void config_relay_clicked(lv_event_t *e) {
+    ESP_LOGI(TAG, "CONFIG: RELAY toggle clicked");
+    g_relay_enabled = !g_relay_enabled;
+
+    if (g_relay_btn != NULL) {
+        if (g_relay_enabled) {
+            lv_obj_set_style_bg_color(g_relay_btn, lv_color_hex(0x00AA00), 0);  // Green
+            ESP_LOGI(TAG, "RELAY ENABLED");
+        } else {
+            lv_obj_set_style_bg_color(g_relay_btn, lv_color_hex(0x808080), 0);  // Gray
+            ESP_LOGI(TAG, "RELAY DISABLED");
+        }
+    }
 }
 
 /**
@@ -461,13 +631,13 @@ lv_obj_t* create_config_screen(ui_footer_page_cb_t page_callback, lv_obj_t **foo
     config_button_t buttons[] = {
         {"Date/Time", config_datetime_clicked},
         {"GPS", config_gps_source_clicked},
-        {"3", config_btn3_clicked},
+        {"LED", config_led_clicked},
         {"4", config_btn4_clicked},
-        {"5", config_btn5_clicked},
-        {"6", config_btn6_clicked},
+        {"Mute", config_mute_clicked},
+        {"Buzzer", config_buzzer_clicked},
         {"7", config_btn7_clicked},
         {"NMEA\nLOG", config_nmea_log_clicked},
-        {"9", config_btn9_clicked},
+        {"RELAY", config_relay_clicked},
     };
     int button_count = sizeof(buttons) / sizeof(buttons[0]);
 
@@ -508,11 +678,22 @@ lv_obj_t* create_config_screen(ui_footer_page_cb_t page_callback, lv_obj_t **foo
 
         lv_obj_t *btn = create_tool_button(screen, buttons[i].label, x, y, buttons[i].callback);
 
-        // Store reference to NMEA LOG button (index 7 = button 8) and set initial color
-        if (i == 7) {
+        // Store references to toggle buttons and set initial colors (all start disabled/gray)
+        if (i == 2) {  // LED button
+            g_led_btn = btn;
+            lv_obj_set_style_bg_color(g_led_btn, lv_color_hex(0x808080), 0);
+        } else if (i == 4) {  // Mute button
+            g_mute_btn = btn;
+            lv_obj_set_style_bg_color(g_mute_btn, lv_color_hex(0x808080), 0);
+        } else if (i == 5) {  // Buzzer button
+            g_buzzer_btn = btn;
+            lv_obj_set_style_bg_color(g_buzzer_btn, lv_color_hex(0x808080), 0);
+        } else if (i == 7) {  // NMEA LOG button
             g_nmea_log_btn = btn;
-            // Set initial color based on state (starts disabled/gray)
             lv_obj_set_style_bg_color(g_nmea_log_btn, lv_color_hex(0x808080), 0);
+        } else if (i == 8) {  // RELAY button
+            g_relay_btn = btn;
+            lv_obj_set_style_bg_color(g_relay_btn, lv_color_hex(0x808080), 0);
         }
     }
 

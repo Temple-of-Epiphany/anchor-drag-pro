@@ -9,12 +9,11 @@
  *
  * Full-width header bar (800x80px) with:
  * - "ANCHOR DRAG ALARM" title (center)
- * - Left side icons: Bluetooth, WiFi, TF Card (SD Card)
- * - Right side icons: Anchor (Armed), Compass, GPS/Satellite
+ * - Icon order (left to right): Bluetooth, WiFi, TF Card, N2K, Compass, GPS
  *
  * Icon colors indicate status:
- * - Green: Active/Good (GPS found, Anchor armed, TF card detected)
- * - Blue: Connected (WiFi, Bluetooth, Compass found)
+ * - Green: Active/Good (GPS found, Compass found, N2K connected, TF card detected)
+ * - Blue: Connected (WiFi, Bluetooth)
  * - Gray: Inactive/Off/Not found (default state)
  *
  * Appears on all screens as a persistent header
@@ -45,21 +44,28 @@
 lv_obj_t* ui_header_create(lv_obj_t *parent);
 
 /**
- * Update GPS status icon (right side, position 1)
+ * Update GPS status icon (rightmost icon - position 6)
  * @param header Header object returned from ui_header_create()
  * @param found true = GPS found (green), false = GPS not found (gray)
  */
 void ui_header_set_gps_status(lv_obj_t *header, bool found);
 
 /**
- * Update Compass status icon (right side, position 0)
+ * Update Compass status icon (position 5 - 2nd from right)
  * @param header Header object returned from ui_header_create()
- * @param found true = Compass found (blue), false = Compass not found (gray)
+ * @param found true = Compass found (green), false = Compass not found (gray)
  */
 void ui_header_set_compass_status(lv_obj_t *header, bool found);
 
 /**
- * Update Anchor Armed status icon (right side, position 2)
+ * Update N2K status icon (position 4 - middle right)
+ * @param header Header object returned from ui_header_create()
+ * @param connected true = N2K connected (green), false = Not connected (gray)
+ */
+void ui_header_set_n2k_status(lv_obj_t *header, bool connected);
+
+/**
+ * Update Anchor Armed status icon (DEPRECATED - use ui_header_set_n2k_status)
  * @param header Header object returned from ui_header_create()
  * @param armed true = Anchor armed (green), false = Not armed (gray)
  */
