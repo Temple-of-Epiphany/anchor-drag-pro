@@ -733,6 +733,35 @@ void app_main(void)
         } else {
             ESP_LOGE(TAG, "Failed to lock LVGL for START screen");
         }
+
+        // Update WiFi icon status on all headers after screen creation
+        #if ENABLE_WIFI
+        ESP_LOGI(TAG, "Updating WiFi icon status on all screens...");
+        if (lvgl_lock(100)) {
+            bool wifi_connected = wifi_manager_is_connected();
+            ESP_LOGI(TAG, "WiFi connection status: %s", wifi_connected ? "CONNECTED" : "DISCONNECTED");
+
+            // Update WiFi icon on all navigation screens
+            for (int i = 0; i < PAGE_COUNT; i++) {
+                if (g_screens[i] != NULL) {
+                    lv_obj_t *screen = g_screens[i];
+                    uint32_t child_count = lv_obj_get_child_cnt(screen);
+
+                    // Find header in each screen
+                    for (uint32_t j = 0; j < child_count; j++) {
+                        lv_obj_t *child = lv_obj_get_child(screen, j);
+                        if (child != NULL) {
+                            // Try to update WiFi status on this child (will only work if it's a header)
+                            ui_header_set_wifi_status(child, wifi_connected);
+                            break;  // Only update first header found
+                        }
+                    }
+                }
+            }
+            lvgl_unlock();
+            ESP_LOGI(TAG, "WiFi icon status updated on all screens");
+        }
+        #endif
     } else {
         ESP_LOGE(TAG, "Failed to lock LVGL for screen creation");
     }

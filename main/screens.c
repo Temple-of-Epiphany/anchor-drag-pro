@@ -566,8 +566,127 @@ static void config_buzzer_clicked(lv_event_t *e) {
     }
 }
 
+// PGN Selection state
+static lv_obj_t *g_gps_primary_cb = NULL;
+static lv_obj_t *g_gps_logged_cb = NULL;
+static lv_obj_t *g_compass_primary_cb = NULL;
+static lv_obj_t *g_compass_logged_cb = NULL;
+static lv_obj_t *g_log_freq_dropdown = NULL;
+
+static void pgn_save_clicked(lv_event_t *e) {
+    lv_obj_t *modal = (lv_obj_t *)lv_event_get_user_data(e);
+
+    bool gps_primary = g_gps_primary_cb ? (lv_obj_get_state(g_gps_primary_cb) & LV_STATE_CHECKED) : false;
+    bool gps_logged = g_gps_logged_cb ? (lv_obj_get_state(g_gps_logged_cb) & LV_STATE_CHECKED) : false;
+    bool compass_primary = g_compass_primary_cb ? (lv_obj_get_state(g_compass_primary_cb) & LV_STATE_CHECKED) : false;
+    bool compass_logged = g_compass_logged_cb ? (lv_obj_get_state(g_compass_logged_cb) & LV_STATE_CHECKED) : false;
+
+    uint16_t freq_idx = g_log_freq_dropdown ? lv_dropdown_get_selected(g_log_freq_dropdown) : 0;
+
+    ESP_LOGI(TAG, "PGN Settings saved - GPS(P:%d,L:%d) Compass(P:%d,L:%d) Freq:%d",
+             gps_primary, gps_logged, compass_primary, compass_logged, freq_idx);
+
+    // TODO: Save to NVS
+
+    if (modal) lv_obj_del(modal);
+}
+
+static void pgn_cancel_clicked(lv_event_t *e) {
+    lv_obj_t *modal = (lv_obj_t *)lv_event_get_user_data(e);
+    ESP_LOGI(TAG, "PGN Selection cancelled");
+    if (modal) lv_obj_del(modal);
+}
+
 static void config_btn7_clicked(lv_event_t *e) {
-    ESP_LOGI(TAG, "CONFIG: Button 7 clicked");
+    ESP_LOGI(TAG, "CONFIG: PGN Selection clicked");
+
+    // Create PGN selection modal
+    lv_obj_t *modal = lv_obj_create(lv_scr_act());
+    lv_obj_set_size(modal, 600, 450);
+    lv_obj_center(modal);
+    lv_obj_set_style_bg_color(modal, lv_color_hex(THEME_PANEL_BG_DARK), 0);
+    lv_obj_set_style_border_color(modal, lv_color_hex(0x00AA00), 0);
+    lv_obj_set_style_border_width(modal, 2, 0);
+
+    // Title
+    lv_obj_t *title = lv_label_create(modal);
+    lv_label_set_text(title, "PGN Selection");
+    THEME_STYLE_TEXT(title, THEME_TITLE_COLOR, FONT_TITLE);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 10);
+
+    // GPS Section
+    lv_obj_t *gps_label = lv_label_create(modal);
+    lv_label_set_text(gps_label, "GPS (PGN 129029):");
+    THEME_STYLE_TEXT(gps_label, COLOR_TEXT_PRIMARY, FONT_BODY_NORMAL);
+    lv_obj_align(gps_label, LV_ALIGN_TOP_LEFT, 30, 60);
+
+    g_gps_primary_cb = lv_checkbox_create(modal);
+    lv_checkbox_set_text(g_gps_primary_cb, "Primary");
+    lv_obj_align(g_gps_primary_cb, LV_ALIGN_TOP_LEFT, 50, 90);
+    lv_obj_set_style_text_font(g_gps_primary_cb, FONT_BODY_SMALL, 0);
+
+    g_gps_logged_cb = lv_checkbox_create(modal);
+    lv_checkbox_set_text(g_gps_logged_cb, "Logged");
+    lv_obj_align(g_gps_logged_cb, LV_ALIGN_TOP_LEFT, 200, 90);
+    lv_obj_set_style_text_font(g_gps_logged_cb, FONT_BODY_SMALL, 0);
+
+    // Compass Section
+    lv_obj_t *compass_label = lv_label_create(modal);
+    lv_label_set_text(compass_label, "Compass (PGN 127250):");
+    THEME_STYLE_TEXT(compass_label, COLOR_TEXT_PRIMARY, FONT_BODY_NORMAL);
+    lv_obj_align(compass_label, LV_ALIGN_TOP_LEFT, 30, 140);
+
+    g_compass_primary_cb = lv_checkbox_create(modal);
+    lv_checkbox_set_text(g_compass_primary_cb, "Primary");
+    lv_obj_align(g_compass_primary_cb, LV_ALIGN_TOP_LEFT, 50, 170);
+    lv_obj_set_style_text_font(g_compass_primary_cb, FONT_BODY_SMALL, 0);
+
+    g_compass_logged_cb = lv_checkbox_create(modal);
+    lv_checkbox_set_text(g_compass_logged_cb, "Logged");
+    lv_obj_align(g_compass_logged_cb, LV_ALIGN_TOP_LEFT, 200, 170);
+    lv_obj_set_style_text_font(g_compass_logged_cb, FONT_BODY_SMALL, 0);
+
+    // Logging Frequency
+    lv_obj_t *freq_label = lv_label_create(modal);
+    lv_label_set_text(freq_label, "Logging Frequency:");
+    THEME_STYLE_TEXT(freq_label, COLOR_TEXT_PRIMARY, FONT_BODY_NORMAL);
+    lv_obj_align(freq_label, LV_ALIGN_TOP_LEFT, 30, 220);
+
+    g_log_freq_dropdown = lv_dropdown_create(modal);
+    lv_dropdown_set_options(g_log_freq_dropdown,
+        "1/sec\n1/min\n5/sec\n10/sec\n30/sec\n1/hour");
+    lv_obj_set_size(g_log_freq_dropdown, 200, 45);
+    lv_obj_align(g_log_freq_dropdown, LV_ALIGN_TOP_LEFT, 50, 250);
+    lv_obj_set_style_text_font(g_log_freq_dropdown, FONT_BODY_SMALL, 0);
+
+    // Info text
+    lv_obj_t *info = lv_label_create(modal);
+    lv_label_set_text(info, "Primary: Use as main data source\nLogged: Save to daily file when NMEA LOG enabled");
+    THEME_STYLE_TEXT(info, COLOR_TEXT_SECONDARY, FONT_BODY_SMALL);
+    lv_obj_align(info, LV_ALIGN_TOP_LEFT, 30, 310);
+
+    // Save and Cancel buttons
+    lv_obj_t *save_btn = lv_btn_create(modal);
+    lv_obj_set_size(save_btn, 200, 45);
+    lv_obj_align(save_btn, LV_ALIGN_BOTTOM_LEFT, 50, -10);
+    lv_obj_set_style_bg_color(save_btn, lv_color_hex(0x00AA00), 0);
+    lv_obj_add_event_cb(save_btn, pgn_save_clicked, LV_EVENT_CLICKED, modal);
+
+    lv_obj_t *save_label = lv_label_create(save_btn);
+    lv_label_set_text(save_label, "SAVE");
+    THEME_STYLE_TEXT(save_label, COLOR_TEXT_PRIMARY, FONT_BUTTON_SMALL);
+    lv_obj_center(save_label);
+
+    lv_obj_t *cancel_btn = lv_btn_create(modal);
+    lv_obj_set_size(cancel_btn, 200, 45);
+    lv_obj_align(cancel_btn, LV_ALIGN_BOTTOM_RIGHT, -50, -10);
+    THEME_STYLE_BUTTON(cancel_btn, THEME_BTN_CANCEL);
+    lv_obj_add_event_cb(cancel_btn, pgn_cancel_clicked, LV_EVENT_CLICKED, modal);
+
+    lv_obj_t *cancel_label = lv_label_create(cancel_btn);
+    lv_label_set_text(cancel_label, "CANCEL");
+    THEME_STYLE_TEXT(cancel_label, COLOR_TEXT_PRIMARY, FONT_BUTTON_SMALL);
+    lv_obj_center(cancel_label);
 }
 
 static void config_nmea_log_clicked(lv_event_t *e) {
@@ -635,7 +754,7 @@ lv_obj_t* create_config_screen(ui_footer_page_cb_t page_callback, lv_obj_t **foo
         {"4", config_btn4_clicked},
         {"Mute", config_mute_clicked},
         {"Buzzer", config_buzzer_clicked},
-        {"7", config_btn7_clicked},
+        {"PGN", config_btn7_clicked},
         {"NMEA\nLOG", config_nmea_log_clicked},
         {"RELAY", config_relay_clicked},
     };
@@ -1830,18 +1949,155 @@ static void wifi_setup_back_clicked(lv_event_t *e) {
     }
 }
 
+// ADHOC mode state
+static lv_obj_t *adhoc_modal = NULL;
+static lv_obj_t *adhoc_ssid_ta = NULL;
+static lv_obj_t *adhoc_password_ta = NULL;
+static lv_obj_t *adhoc_keyboard = NULL;
+
+static void adhoc_create_clicked(lv_event_t *e) {
+    ESP_LOGI(TAG, "ADHOC Create button clicked");
+
+    if (adhoc_ssid_ta == NULL || adhoc_password_ta == NULL) {
+        ESP_LOGE(TAG, "ADHOC text areas not initialized");
+        return;
+    }
+
+    const char *ssid = lv_textarea_get_text(adhoc_ssid_ta);
+    const char *password = lv_textarea_get_text(adhoc_password_ta);
+
+    if (strlen(ssid) == 0) {
+        lv_obj_t *mbox = lv_msgbox_create(lv_scr_act(), "Error",
+            "SSID cannot be empty", NULL, true);
+        lv_obj_center(mbox);
+        return;
+    }
+
+    if (strlen(password) < 8) {
+        lv_obj_t *mbox = lv_msgbox_create(lv_scr_act(), "Error",
+            "Password must be at least 8 characters", NULL, true);
+        lv_obj_center(mbox);
+        return;
+    }
+
+    ESP_LOGI(TAG, "Creating ADHOC network: SSID=%s", ssid);
+
+    // TODO: Implement ESP32 AP mode configuration
+    // wifi_manager_start_ap(ssid, password);
+
+    // Show placeholder message
+    char msg[128];
+    snprintf(msg, sizeof(msg), "ADHOC mode will create network:\nSSID: %s\n(Not yet implemented)", ssid);
+    lv_obj_t *mbox = lv_msgbox_create(lv_scr_act(), "ADHOC Mode", msg, NULL, true);
+    lv_obj_center(mbox);
+
+    // Close modal
+    if (adhoc_modal) {
+        lv_obj_del(adhoc_modal);
+        adhoc_modal = NULL;
+        adhoc_ssid_ta = NULL;
+        adhoc_password_ta = NULL;
+        adhoc_keyboard = NULL;
+    }
+}
+
+static void adhoc_cancel_clicked(lv_event_t *e) {
+    ESP_LOGI(TAG, "ADHOC cancelled");
+    if (adhoc_modal) {
+        lv_obj_del(adhoc_modal);
+        adhoc_modal = NULL;
+        adhoc_ssid_ta = NULL;
+        adhoc_password_ta = NULL;
+        adhoc_keyboard = NULL;
+    }
+}
+
+static void adhoc_ssid_focused(lv_event_t *e) {
+    if (adhoc_keyboard && adhoc_ssid_ta) {
+        lv_keyboard_set_textarea(adhoc_keyboard, adhoc_ssid_ta);
+    }
+}
+
+static void adhoc_password_focused(lv_event_t *e) {
+    if (adhoc_keyboard && adhoc_password_ta) {
+        lv_keyboard_set_textarea(adhoc_keyboard, adhoc_password_ta);
+    }
+}
+
 static void wifi_adhoc_clicked(lv_event_t *e) {
     ESP_LOGI(TAG, "WiFi ADHOC button clicked - creating local network");
 
-    // TODO: Implement ADHOC mode (AP mode)
-    // This will open a modal asking for:
-    // - SSID (network name)
-    // - Password (key)
-    // Then configure ESP32 as an access point
+    // Create ADHOC configuration modal
+    adhoc_modal = lv_obj_create(lv_scr_act());
+    lv_obj_set_size(adhoc_modal, 650, 450);
+    lv_obj_center(adhoc_modal);
+    lv_obj_set_style_bg_color(adhoc_modal, lv_color_hex(0x1a1a1a), 0);
+    lv_obj_set_style_border_width(adhoc_modal, 2, 0);
+    lv_obj_set_style_border_color(adhoc_modal, lv_color_hex(COLOR_PRIMARY), 0);
 
-    lv_obj_t *mbox = lv_msgbox_create(lv_scr_act(), "ADHOC Mode",
-        "ADHOC mode not yet implemented.\nWill create local WiFi network.", NULL, true);
-    lv_obj_center(mbox);
+    // Title
+    lv_obj_t *title = lv_label_create(adhoc_modal);
+    lv_label_set_text(title, "Create Local WiFi Network");
+    THEME_STYLE_TEXT(title, COLOR_TEXT_PRIMARY, FONT_SUBTITLE);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 10);
+
+    // SSID label and text area
+    lv_obj_t *ssid_label = lv_label_create(adhoc_modal);
+    lv_label_set_text(ssid_label, "Network Name (SSID):");
+    THEME_STYLE_TEXT(ssid_label, COLOR_TEXT_SECONDARY, FONT_BODY_SMALL);
+    lv_obj_align(ssid_label, LV_ALIGN_TOP_LEFT, 20, 45);
+
+    adhoc_ssid_ta = lv_textarea_create(adhoc_modal);
+    lv_obj_set_size(adhoc_ssid_ta, 600, 45);
+    lv_obj_align(adhoc_ssid_ta, LV_ALIGN_TOP_MID, 0, 70);
+    lv_textarea_set_placeholder_text(adhoc_ssid_ta, "Enter SSID");
+    lv_textarea_set_one_line(adhoc_ssid_ta, true);
+    lv_obj_set_style_text_font(adhoc_ssid_ta, FONT_BODY_NORMAL, 0);
+    lv_obj_add_event_cb(adhoc_ssid_ta, adhoc_ssid_focused, LV_EVENT_FOCUSED, NULL);
+
+    // Password label and text area
+    lv_obj_t *pass_label = lv_label_create(adhoc_modal);
+    lv_label_set_text(pass_label, "Password (min 8 chars):");
+    THEME_STYLE_TEXT(pass_label, COLOR_TEXT_SECONDARY, FONT_BODY_SMALL);
+    lv_obj_align(pass_label, LV_ALIGN_TOP_LEFT, 20, 125);
+
+    adhoc_password_ta = lv_textarea_create(adhoc_modal);
+    lv_obj_set_size(adhoc_password_ta, 600, 45);
+    lv_obj_align(adhoc_password_ta, LV_ALIGN_TOP_MID, 0, 150);
+    lv_textarea_set_placeholder_text(adhoc_password_ta, "Enter password");
+    lv_textarea_set_password_mode(adhoc_password_ta, true);
+    lv_textarea_set_one_line(adhoc_password_ta, true);
+    lv_obj_set_style_text_font(adhoc_password_ta, FONT_BODY_NORMAL, 0);
+    lv_obj_add_event_cb(adhoc_password_ta, adhoc_password_focused, LV_EVENT_FOCUSED, NULL);
+
+    // Keyboard
+    adhoc_keyboard = lv_keyboard_create(adhoc_modal);
+    lv_obj_set_size(adhoc_keyboard, 600, 150);
+    lv_obj_align(adhoc_keyboard, LV_ALIGN_TOP_MID, 0, 205);
+    lv_keyboard_set_textarea(adhoc_keyboard, adhoc_ssid_ta);  // Start with SSID
+
+    // Create and Cancel buttons
+    lv_obj_t *create_btn = lv_btn_create(adhoc_modal);
+    lv_obj_set_size(create_btn, 250, 45);
+    lv_obj_align(create_btn, LV_ALIGN_BOTTOM_LEFT, 30, -10);
+    lv_obj_set_style_bg_color(create_btn, lv_color_hex(0x00AA00), 0);  // Green
+    lv_obj_add_event_cb(create_btn, adhoc_create_clicked, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_t *create_label = lv_label_create(create_btn);
+    lv_label_set_text(create_label, "CREATE");
+    THEME_STYLE_TEXT(create_label, COLOR_TEXT_PRIMARY, FONT_BUTTON_LARGE);
+    lv_obj_center(create_label);
+
+    lv_obj_t *cancel_btn = lv_btn_create(adhoc_modal);
+    lv_obj_set_size(cancel_btn, 250, 45);
+    lv_obj_align(cancel_btn, LV_ALIGN_BOTTOM_RIGHT, -30, -10);
+    THEME_STYLE_BUTTON(cancel_btn, THEME_BTN_CANCEL);
+    lv_obj_add_event_cb(cancel_btn, adhoc_cancel_clicked, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_t *cancel_label = lv_label_create(cancel_btn);
+    lv_label_set_text(cancel_label, "CANCEL");
+    THEME_STYLE_TEXT(cancel_label, COLOR_TEXT_PRIMARY, FONT_BUTTON_LARGE);
+    lv_obj_center(cancel_label);
 }
 
 static void wifi_forget_clicked(lv_event_t *e) {
