@@ -1830,6 +1830,60 @@ static void wifi_setup_back_clicked(lv_event_t *e) {
     }
 }
 
+static void wifi_adhoc_clicked(lv_event_t *e) {
+    ESP_LOGI(TAG, "WiFi ADHOC button clicked - creating local network");
+
+    // TODO: Implement ADHOC mode (AP mode)
+    // This will open a modal asking for:
+    // - SSID (network name)
+    // - Password (key)
+    // Then configure ESP32 as an access point
+
+    lv_obj_t *mbox = lv_msgbox_create(lv_scr_act(), "ADHOC Mode",
+        "ADHOC mode not yet implemented.\nWill create local WiFi network.", NULL, true);
+    lv_obj_center(mbox);
+}
+
+static void wifi_forget_clicked(lv_event_t *e) {
+    ESP_LOGI(TAG, "WiFi FORGET button clicked - clearing credentials");
+#if ENABLE_WIFI
+    esp_err_t ret = wifi_manager_clear_credentials();
+    if (ret == ESP_OK) {
+        ESP_LOGI(TAG, "WiFi credentials cleared successfully");
+
+        // Disconnect if currently connected
+        if (wifi_manager_is_connected()) {
+            wifi_manager_disconnect();
+        }
+
+        // Update status
+        if (wifi_status_label) {
+            lv_label_set_text(wifi_status_label, "Credentials forgotten");
+        }
+
+        // Show success message
+        lv_obj_t *mbox = lv_msgbox_create(lv_scr_act(), "Credentials Forgotten",
+            "WiFi credentials have been deleted.\nDevice will not auto-reconnect.", NULL, true);
+        lv_obj_center(mbox);
+
+        // Update WiFi icon to gray
+        lv_obj_t *header = lv_obj_get_parent(wifi_status_label);
+        if (header) {
+            ui_header_set_wifi_status(header, false);
+        }
+    } else {
+        ESP_LOGE(TAG, "Failed to clear credentials: %s", esp_err_to_name(ret));
+        lv_obj_t *mbox = lv_msgbox_create(lv_scr_act(), "Error",
+            "Failed to forget credentials", NULL, true);
+        lv_obj_center(mbox);
+    }
+#else
+    lv_obj_t *mbox = lv_msgbox_create(lv_scr_act(), "WiFi Disabled",
+        "WiFi is not enabled in configuration", NULL, true);
+    lv_obj_center(mbox);
+#endif
+}
+
 static void wifi_scan_clicked(lv_event_t *e) {
     ESP_LOGI(TAG, "WiFi Scan button clicked");
 #if ENABLE_WIFI
@@ -2182,7 +2236,7 @@ static lv_obj_t* create_wifi_setup_screen(lv_obj_t *menu_screen_ref) {
     THEME_STYLE_TEXT(wifi_status_label, COLOR_TEXT_PRIMARY, FONT_BODY_NORMAL);
     lv_obj_center(wifi_status_label);
 
-    // Scan button
+    // SCAN button (left)
     lv_obj_t *scan_btn = lv_btn_create(screen);
     lv_obj_set_size(scan_btn, 200, 50);
     lv_obj_align(scan_btn, LV_ALIGN_TOP_LEFT, 30, HEADER_HEIGHT + 130);
@@ -2190,26 +2244,38 @@ static lv_obj_t* create_wifi_setup_screen(lv_obj_t *menu_screen_ref) {
     lv_obj_add_event_cb(scan_btn, wifi_scan_clicked, LV_EVENT_CLICKED, NULL);
 
     lv_obj_t *scan_label = lv_label_create(scan_btn);
-    lv_label_set_text(scan_label, LV_SYMBOL_REFRESH " Scan");
+    lv_label_set_text(scan_label, LV_SYMBOL_REFRESH " SCAN");
     THEME_STYLE_TEXT(scan_label, COLOR_TEXT_PRIMARY, FONT_BUTTON_SMALL);
     lv_obj_center(scan_label);
 
-    // Disconnect button
-    lv_obj_t *disconnect_btn = lv_btn_create(screen);
-    lv_obj_set_size(disconnect_btn, 200, 50);
-    lv_obj_align(disconnect_btn, LV_ALIGN_TOP_RIGHT, -30, HEADER_HEIGHT + 130);
-    THEME_STYLE_BUTTON(disconnect_btn, THEME_BTN_DANGER);
-    lv_obj_add_event_cb(disconnect_btn, wifi_disconnect_clicked, LV_EVENT_CLICKED, NULL);
+    // ADHOC button (middle) - Create local WiFi network
+    lv_obj_t *adhoc_btn = lv_btn_create(screen);
+    lv_obj_set_size(adhoc_btn, 200, 50);
+    lv_obj_align(adhoc_btn, LV_ALIGN_TOP_MID, 0, HEADER_HEIGHT + 130);
+    THEME_STYLE_BUTTON(adhoc_btn, COLOR_PRIMARY);
+    lv_obj_add_event_cb(adhoc_btn, wifi_adhoc_clicked, LV_EVENT_CLICKED, NULL);
 
-    lv_obj_t *disconnect_label = lv_label_create(disconnect_btn);
-    lv_label_set_text(disconnect_label, "Disconnect");
-    THEME_STYLE_TEXT(disconnect_label, COLOR_TEXT_PRIMARY, FONT_BUTTON_SMALL);
-    lv_obj_center(disconnect_label);
+    lv_obj_t *adhoc_label = lv_label_create(adhoc_btn);
+    lv_label_set_text(adhoc_label, LV_SYMBOL_WIFI " ADHOC");
+    THEME_STYLE_TEXT(adhoc_label, COLOR_TEXT_PRIMARY, FONT_BUTTON_SMALL);
+    lv_obj_center(adhoc_label);
 
-    // Test Connection button
+    // FORGET button (right) - Delete saved credentials
+    lv_obj_t *forget_btn = lv_btn_create(screen);
+    lv_obj_set_size(forget_btn, 200, 50);
+    lv_obj_align(forget_btn, LV_ALIGN_TOP_RIGHT, -30, HEADER_HEIGHT + 130);
+    THEME_STYLE_BUTTON(forget_btn, THEME_BTN_DANGER);
+    lv_obj_add_event_cb(forget_btn, wifi_forget_clicked, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_t *forget_label = lv_label_create(forget_btn);
+    lv_label_set_text(forget_label, LV_SYMBOL_TRASH " FORGET");
+    THEME_STYLE_TEXT(forget_label, COLOR_TEXT_PRIMARY, FONT_BUTTON_SMALL);
+    lv_obj_center(forget_label);
+
+    // Test Connection button (second row, left)
     lv_obj_t *test_btn = lv_btn_create(screen);
     lv_obj_set_size(test_btn, 200, 50);
-    lv_obj_align(test_btn, LV_ALIGN_TOP_MID, 0, HEADER_HEIGHT + 130);
+    lv_obj_align(test_btn, LV_ALIGN_TOP_LEFT, 30, HEADER_HEIGHT + 190);
     THEME_STYLE_BUTTON(test_btn, COLOR_PRIMARY);
     lv_obj_add_event_cb(test_btn, wifi_test_clicked, LV_EVENT_CLICKED, NULL);
 
@@ -2218,10 +2284,22 @@ static lv_obj_t* create_wifi_setup_screen(lv_obj_t *menu_screen_ref) {
     THEME_STYLE_TEXT(test_label, COLOR_TEXT_PRIMARY, FONT_BUTTON_SMALL);
     lv_obj_center(test_label);
 
-    // Network list
+    // Disconnect button (second row, right)
+    lv_obj_t *disconnect_btn = lv_btn_create(screen);
+    lv_obj_set_size(disconnect_btn, 200, 50);
+    lv_obj_align(disconnect_btn, LV_ALIGN_TOP_RIGHT, -30, HEADER_HEIGHT + 190);
+    THEME_STYLE_BUTTON(disconnect_btn, THEME_BTN_DANGER);
+    lv_obj_add_event_cb(disconnect_btn, wifi_disconnect_clicked, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_t *disconnect_label = lv_label_create(disconnect_btn);
+    lv_label_set_text(disconnect_label, "Disconnect");
+    THEME_STYLE_TEXT(disconnect_label, COLOR_TEXT_PRIMARY, FONT_BUTTON_SMALL);
+    lv_obj_center(disconnect_label);
+
+    // Network list (moved down to accommodate second row of buttons)
     wifi_network_list = lv_list_create(screen);
-    lv_obj_set_size(wifi_network_list, 750, 200);
-    lv_obj_align(wifi_network_list, LV_ALIGN_TOP_MID, 0, HEADER_HEIGHT + 200);
+    lv_obj_set_size(wifi_network_list, 750, 140);  // Reduced height
+    lv_obj_align(wifi_network_list, LV_ALIGN_TOP_MID, 0, HEADER_HEIGHT + 250);
     lv_obj_set_style_bg_color(wifi_network_list, lv_color_hex(0x1a1a1a), 0);
     lv_obj_set_style_border_width(wifi_network_list, 1, 0);
     lv_obj_set_style_border_color(wifi_network_list, lv_color_hex(0x444444), 0);
