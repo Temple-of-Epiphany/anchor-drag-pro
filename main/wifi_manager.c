@@ -22,6 +22,8 @@
 #include "nvs.h"
 #include "lwip/err.h"
 #include "lwip/sys.h"
+#include "ping/ping_sock.h"
+#include "esp_netif.h"
 
 static const char *TAG = "wifi_manager";
 
@@ -361,5 +363,62 @@ esp_err_t wifi_manager_clear_credentials(void)
     nvs_close(nvs_handle);
 
     ESP_LOGI(TAG, "WiFi credentials cleared from NVS");
+    return ESP_OK;
+}
+
+esp_err_t wifi_manager_ping_gateway(uint32_t timeout_ms)
+{
+    if (!wifi_manager_is_connected()) {
+        ESP_LOGW(TAG, "Cannot ping: WiFi not connected");
+        return ESP_FAIL;
+    }
+
+    // Get gateway IP
+    esp_netif_t *netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
+    if (netif == NULL) {
+        ESP_LOGE(TAG, "Failed to get netif handle");
+        return ESP_FAIL;
+    }
+
+    esp_netif_ip_info_t ip_info;
+    if (esp_netif_get_ip_info(netif, &ip_info) != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to get IP info");
+        return ESP_FAIL;
+    }
+
+    // Configure ping
+    esp_ping_config_t ping_config = ESP_PING_DEFAULT_CONFIG();
+    ping_config.target_addr.u_addr.ip4.addr = ip_info.gw.addr;  // Gateway IP
+    ping_config.target_addr.type = IPADDR_TYPE_V4;
+    ping_config.count = 3;  // Send 3 pings
+    ping_config.interval_ms = 1000;
+    ping_config.timeout_ms = timeout_ms > 0 ? timeout_ms : 5000;
+
+    ESP_LOGI(TAG, "Pinging gateway: " IPSTR, IP2STR(&ip_info.gw));
+
+    // Create ping session
+    esp_ping_handle_t ping_handle;
+    esp_err_t err = esp_ping_new_session(&ping_config, NULL, &ping_handle);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to create ping session: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    // Start ping
+    err = esp_ping_start(ping_handle);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to start ping: %s", esp_err_to_name(err));
+        esp_ping_delete_session(ping_handle);
+        return err;
+    }
+
+    // Wait for pings to complete (3 pings * 1000ms interval + timeout)
+    vTaskDelay(pdMS_TO_TICKS(4000));
+
+    // Stop and cleanup
+    esp_ping_stop(ping_handle);
+    esp_ping_delete_session(ping_handle);
+
+    ESP_LOGI(TAG, "Ping test completed");
     return ESP_OK;
 }

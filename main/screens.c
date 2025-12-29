@@ -1824,6 +1824,25 @@ static void wifi_disconnect_clicked(lv_event_t *e) {
 #endif
 }
 
+static void wifi_test_clicked(lv_event_t *e) {
+    ESP_LOGI(TAG, "WiFi Test Connection button clicked");
+#if ENABLE_WIFI
+    if (wifi_status_label) {
+        lv_label_set_text(wifi_status_label, "Testing connection...");
+    }
+
+    esp_err_t ret = wifi_manager_ping_gateway(5000);
+
+    if (wifi_status_label) {
+        if (ret == ESP_OK) {
+            lv_label_set_text(wifi_status_label, "Ping successful - Gateway reachable!");
+        } else {
+            lv_label_set_text(wifi_status_label, "Ping failed - Check connection");
+        }
+    }
+#endif
+}
+
 // WiFi Setup Screen
 static lv_obj_t* create_wifi_setup_screen(lv_obj_t *menu_screen_ref) {
     lv_obj_t *screen = lv_obj_create(NULL);
@@ -1894,6 +1913,18 @@ static lv_obj_t* create_wifi_setup_screen(lv_obj_t *menu_screen_ref) {
     lv_label_set_text(disconnect_label, "Disconnect");
     THEME_STYLE_TEXT(disconnect_label, COLOR_TEXT_PRIMARY, FONT_BUTTON_SMALL);
     lv_obj_center(disconnect_label);
+
+    // Test Connection button
+    lv_obj_t *test_btn = lv_btn_create(screen);
+    lv_obj_set_size(test_btn, 200, 50);
+    lv_obj_align(test_btn, LV_ALIGN_TOP_MID, 0, HEADER_HEIGHT + 130);
+    THEME_STYLE_BUTTON(test_btn, COLOR_PRIMARY);
+    lv_obj_add_event_cb(test_btn, wifi_test_clicked, LV_EVENT_CLICKED, NULL);
+
+    lv_obj_t *test_label = lv_label_create(test_btn);
+    lv_label_set_text(test_label, LV_SYMBOL_CALL " Test");
+    THEME_STYLE_TEXT(test_label, COLOR_TEXT_PRIMARY, FONT_BUTTON_SMALL);
+    lv_obj_center(test_label);
 
     // Network list
     wifi_network_list = lv_list_create(screen);

@@ -145,6 +145,14 @@ void wifi_manager_register_callback(wifi_event_cb_t callback, void *user_data);
  */
 esp_err_t wifi_manager_clear_credentials(void);
 
+/**
+ * Ping the gateway to test connectivity
+ *
+ * @param timeout_ms Timeout in milliseconds (default 5000ms)
+ * @return ESP_OK if ping successful, ESP_FAIL if no response or not connected
+ */
+esp_err_t wifi_manager_ping_gateway(uint32_t timeout_ms);
+
 #ifdef __cplusplus
 }
 #endif

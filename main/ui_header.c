@@ -39,7 +39,7 @@ static bool g_compass_found = false;
 static bool g_anchor_armed = false;
 
 // Track all created headers so we can update them all when status changes
-#define MAX_HEADERS 10
+#define MAX_HEADERS 20  // Increased limit for navigation-heavy usage
 static lv_obj_t *g_all_headers[MAX_HEADERS] = {NULL};
 static int g_header_count = 0;
 
