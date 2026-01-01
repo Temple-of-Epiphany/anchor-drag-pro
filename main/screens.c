@@ -214,11 +214,11 @@ static lv_obj_t* create_mode_button(lv_obj_t *parent, const char *icon, const ch
     lv_obj_set_size(btn, BUTTON_WIDTH_LARGE, BUTTON_HEIGHT_MEDIUM);
     lv_obj_align(btn, LV_ALIGN_TOP_MID, 0, y_offset);
 
+    // Enable event bubbling BEFORE styling/callbacks - critical for gesture support
+    lv_obj_add_flag(btn, LV_OBJ_FLAG_EVENT_BUBBLE);
+
     // Apply 3D button styling
     apply_3d_button_style(btn, bg_color);
-
-    // Enable event bubbling so gestures work even when touching buttons
-    lv_obj_add_flag(btn, LV_OBJ_FLAG_EVENT_BUBBLE);
 
     // Add click event
     lv_obj_add_event_cb(btn, event_cb, LV_EVENT_CLICKED, NULL);
@@ -1615,11 +1615,12 @@ static lv_obj_t* create_tool_button(lv_obj_t *parent, const char *label, int x, 
     lv_obj_t *btn = lv_btn_create(parent);
     lv_obj_set_size(btn, BUTTON_WIDTH_SMALL, 70);
     lv_obj_set_pos(btn, x, y);
+
+    // Enable event bubbling BEFORE adding callbacks - critical for gesture support
+    lv_obj_add_flag(btn, LV_OBJ_FLAG_EVENT_BUBBLE);
+
     apply_3d_button_style(btn, THEME_BTN_PRIMARY);
     lv_obj_add_event_cb(btn, callback, LV_EVENT_CLICKED, NULL);
-
-    // Enable event bubbling so gestures work even when touching buttons
-    lv_obj_add_flag(btn, LV_OBJ_FLAG_EVENT_BUBBLE);
 
     lv_obj_t *btn_label = lv_label_create(btn);
     lv_label_set_text(btn_label, label);
