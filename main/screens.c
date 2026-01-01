@@ -821,6 +821,7 @@ static void config_gps_source_clicked(lv_event_t *e) {
 
     for (int i = 0; i < 5; i++) {
         lv_obj_t *btn = lv_btn_create(modal);
+        lv_obj_add_flag(btn, LV_OBJ_FLAG_EVENT_BUBBLE);  // Enable gesture passthrough
         lv_obj_set_size(btn, 200, 50);
         lv_obj_align(btn, LV_ALIGN_TOP_MID, 0, 75 + i * 55);
 
@@ -842,6 +843,7 @@ static void config_gps_source_clicked(lv_event_t *e) {
     // Save and Cancel buttons (side by side at bottom with more spacing)
     // Save button (bottom left)
     lv_obj_t *save_btn = lv_btn_create(modal);
+    lv_obj_add_flag(save_btn, LV_OBJ_FLAG_EVENT_BUBBLE);  // Enable gesture passthrough
     lv_obj_set_size(save_btn, 150, 45);
     lv_obj_align(save_btn, LV_ALIGN_BOTTOM_LEFT, 40, -20);  // Increased bottom margin from -10 to -20
     apply_3d_button_style(save_btn, 0x00AA00);  // Green with 3D styling
@@ -854,6 +856,7 @@ static void config_gps_source_clicked(lv_event_t *e) {
 
     // Cancel button (bottom right)
     lv_obj_t *cancel_btn = lv_btn_create(modal);
+    lv_obj_add_flag(cancel_btn, LV_OBJ_FLAG_EVENT_BUBBLE);  // Enable gesture passthrough
     lv_obj_set_size(cancel_btn, 150, 45);
     lv_obj_align(cancel_btn, LV_ALIGN_BOTTOM_RIGHT, -40, -20);  // Increased bottom margin from -10 to -20
     apply_3d_button_style(cancel_btn, THEME_BTN_CANCEL);  // 3D styling
@@ -1016,6 +1019,7 @@ static void config_btn7_clicked(lv_event_t *e) {
 
     // Save and Cancel buttons
     lv_obj_t *save_btn = lv_btn_create(modal);
+    lv_obj_add_flag(save_btn, LV_OBJ_FLAG_EVENT_BUBBLE);  // Enable gesture passthrough
     lv_obj_set_size(save_btn, 200, 45);
     lv_obj_align(save_btn, LV_ALIGN_BOTTOM_LEFT, 50, -10);
     lv_obj_set_style_bg_color(save_btn, lv_color_hex(0x00AA00), 0);
@@ -1027,6 +1031,7 @@ static void config_btn7_clicked(lv_event_t *e) {
     lv_obj_center(save_label);
 
     lv_obj_t *cancel_btn = lv_btn_create(modal);
+    lv_obj_add_flag(cancel_btn, LV_OBJ_FLAG_EVENT_BUBBLE);  // Enable gesture passthrough
     lv_obj_set_size(cancel_btn, 200, 45);
     lv_obj_align(cancel_btn, LV_ALIGN_BOTTOM_RIGHT, -50, -10);
     THEME_STYLE_BUTTON(cancel_btn, THEME_BTN_CANCEL);
@@ -1233,6 +1238,7 @@ lv_obj_t* create_update_screen(ui_footer_page_cb_t page_callback, lv_obj_t **foo
 
     // Start Update button (red for danger/warning)
     lv_obj_t *update_btn = lv_btn_create(screen);
+    lv_obj_add_flag(update_btn, LV_OBJ_FLAG_EVENT_BUBBLE);  // Enable gesture passthrough
     lv_obj_set_size(update_btn, 250, 55);
     lv_obj_align(update_btn, LV_ALIGN_BOTTOM_MID, 0, -80);
     THEME_STYLE_BUTTON(update_btn, THEME_BTN_DANGER);
@@ -1370,6 +1376,7 @@ static lv_obj_t* create_tfcard_screen(lv_obj_t *tools_screen_ref) {
 
     // Format button
     lv_obj_t *format_btn = lv_btn_create(screen);
+    lv_obj_add_flag(format_btn, LV_OBJ_FLAG_EVENT_BUBBLE);  // Enable gesture passthrough
     lv_obj_set_size(format_btn, 300, 80);
     lv_obj_align(format_btn, LV_ALIGN_CENTER, 0, -60);
     THEME_STYLE_BUTTON(format_btn, THEME_BTN_DANGER);
@@ -1382,6 +1389,7 @@ static lv_obj_t* create_tfcard_screen(lv_obj_t *tools_screen_ref) {
 
     // Show Contents button
     lv_obj_t *contents_btn = lv_btn_create(screen);
+    lv_obj_add_flag(contents_btn, LV_OBJ_FLAG_EVENT_BUBBLE);  // Enable gesture passthrough
     lv_obj_set_size(contents_btn, 300, 80);
     lv_obj_align(contents_btn, LV_ALIGN_CENTER, 0, 40);
     THEME_STYLE_BUTTON(contents_btn, THEME_BTN_PRIMARY);
@@ -1394,6 +1402,7 @@ static lv_obj_t* create_tfcard_screen(lv_obj_t *tools_screen_ref) {
 
     // Back button
     lv_obj_t *back_btn = lv_btn_create(screen);
+    lv_obj_add_flag(back_btn, LV_OBJ_FLAG_EVENT_BUBBLE);  // Enable gesture passthrough
     lv_obj_set_size(back_btn, 200, 60);
     lv_obj_align(back_btn, LV_ALIGN_BOTTOM_MID, 0, -20);
     THEME_STYLE_BUTTON(back_btn, COLOR_BTN_CONFIG);
@@ -1495,6 +1504,7 @@ static lv_obj_t* create_file_browser_screen(lv_obj_t *tools_screen_ref) {
 
     // Back button
     lv_obj_t *back_btn = lv_btn_create(screen);
+    lv_obj_add_flag(back_btn, LV_OBJ_FLAG_EVENT_BUBBLE);  // Enable gesture passthrough
     lv_obj_set_size(back_btn, 200, 60);
     lv_obj_align(back_btn, LV_ALIGN_BOTTOM_MID, 0, -20);
     THEME_STYLE_BUTTON(back_btn, COLOR_BTN_CONFIG);
@@ -1683,6 +1693,7 @@ static lv_obj_t* create_sysinfo_screen(lv_obj_t *tools_screen_ref) {
 
     // Back button
     lv_obj_t *back_btn = lv_btn_create(screen);
+    lv_obj_add_flag(back_btn, LV_OBJ_FLAG_EVENT_BUBBLE);  // Enable gesture passthrough
     lv_obj_set_size(back_btn, 150, 50);
     lv_obj_align(back_btn, LV_ALIGN_BOTTOM_LEFT, 30, -20);
     THEME_STYLE_BUTTON(back_btn, THEME_BTN_CANCEL);
@@ -1734,6 +1745,7 @@ static lv_obj_t* create_test_hardware_screen(lv_obj_t *tools_screen_ref) {
 
     // Back button
     lv_obj_t *back_btn = lv_btn_create(screen);
+    lv_obj_add_flag(back_btn, LV_OBJ_FLAG_EVENT_BUBBLE);  // Enable gesture passthrough
     lv_obj_set_size(back_btn, 150, 50);
     lv_obj_align(back_btn, LV_ALIGN_BOTTOM_LEFT, 30, -20);
     THEME_STYLE_BUTTON(back_btn, THEME_BTN_CANCEL);
@@ -1801,6 +1813,7 @@ static lv_obj_t* create_logs_menu_screen(lv_obj_t *tools_screen_ref) {
 
     // View Logs button
     lv_obj_t *view_btn = lv_btn_create(screen);
+    lv_obj_add_flag(view_btn, LV_OBJ_FLAG_EVENT_BUBBLE);  // Enable gesture passthrough
     lv_obj_set_size(view_btn, btn_width, btn_height);
     lv_obj_align(view_btn, LV_ALIGN_TOP_MID, 0, start_y);
     THEME_STYLE_BUTTON(view_btn, THEME_BTN_PRIMARY);
@@ -1813,6 +1826,7 @@ static lv_obj_t* create_logs_menu_screen(lv_obj_t *tools_screen_ref) {
 
     // Clear Logs button
     lv_obj_t *clear_btn = lv_btn_create(screen);
+    lv_obj_add_flag(clear_btn, LV_OBJ_FLAG_EVENT_BUBBLE);  // Enable gesture passthrough
     lv_obj_set_size(clear_btn, btn_width, btn_height);
     lv_obj_align(clear_btn, LV_ALIGN_TOP_MID, 0, start_y + btn_height + btn_spacing);
     THEME_STYLE_BUTTON(clear_btn, THEME_BTN_DANGER);
@@ -1825,6 +1839,7 @@ static lv_obj_t* create_logs_menu_screen(lv_obj_t *tools_screen_ref) {
 
     // Set Log Level button
     lv_obj_t *level_btn = lv_btn_create(screen);
+    lv_obj_add_flag(level_btn, LV_OBJ_FLAG_EVENT_BUBBLE);  // Enable gesture passthrough
     lv_obj_set_size(level_btn, btn_width, btn_height);
     lv_obj_align(level_btn, LV_ALIGN_TOP_MID, 0, start_y + (btn_height + btn_spacing) * 2);
     THEME_STYLE_BUTTON(level_btn, COLOR_BTN_CONFIG);
@@ -1837,6 +1852,7 @@ static lv_obj_t* create_logs_menu_screen(lv_obj_t *tools_screen_ref) {
 
     // Back button
     lv_obj_t *back_btn = lv_btn_create(screen);
+    lv_obj_add_flag(back_btn, LV_OBJ_FLAG_EVENT_BUBBLE);  // Enable gesture passthrough
     lv_obj_set_size(back_btn, 150, 50);
     lv_obj_align(back_btn, LV_ALIGN_BOTTOM_LEFT, 30, -20);
     THEME_STYLE_BUTTON(back_btn, THEME_BTN_CANCEL);
@@ -1885,6 +1901,7 @@ static lv_obj_t* create_view_logs_screen(lv_obj_t *logs_menu_ref) {
 
     // Back button
     lv_obj_t *back_btn = lv_btn_create(screen);
+    lv_obj_add_flag(back_btn, LV_OBJ_FLAG_EVENT_BUBBLE);  // Enable gesture passthrough
     lv_obj_set_size(back_btn, 150, 50);
     lv_obj_align(back_btn, LV_ALIGN_BOTTOM_LEFT, 30, -20);
     THEME_STYLE_BUTTON(back_btn, THEME_BTN_CANCEL);
@@ -1945,6 +1962,7 @@ static lv_obj_t* create_clear_logs_screen(lv_obj_t *logs_menu_ref) {
 
     // CLEAR button (red/danger)
     lv_obj_t *clear_btn = lv_btn_create(screen);
+    lv_obj_add_flag(clear_btn, LV_OBJ_FLAG_EVENT_BUBBLE);  // Enable gesture passthrough
     lv_obj_set_size(clear_btn, 250, 60);
     lv_obj_align(clear_btn, LV_ALIGN_BOTTOM_MID, 0, -80);
     THEME_STYLE_BUTTON(clear_btn, THEME_BTN_DANGER);
@@ -1957,6 +1975,7 @@ static lv_obj_t* create_clear_logs_screen(lv_obj_t *logs_menu_ref) {
 
     // Back button
     lv_obj_t *back_btn = lv_btn_create(screen);
+    lv_obj_add_flag(back_btn, LV_OBJ_FLAG_EVENT_BUBBLE);  // Enable gesture passthrough
     lv_obj_set_size(back_btn, 150, 50);
     lv_obj_align(back_btn, LV_ALIGN_BOTTOM_LEFT, 30, -20);
     THEME_STYLE_BUTTON(back_btn, THEME_BTN_CANCEL);
@@ -2044,6 +2063,7 @@ static lv_obj_t* create_set_log_level_screen(lv_obj_t *logs_menu_ref) {
 
     for (int i = 0; i < 6; i++) {
         lv_obj_t *btn = lv_btn_create(screen);
+        lv_obj_add_flag(btn, LV_OBJ_FLAG_EVENT_BUBBLE);  // Enable gesture passthrough
         lv_obj_set_size(btn, 180, 60);
         lv_obj_align(btn, LV_ALIGN_CENTER, levels[i].x, levels[i].y);
 
@@ -2067,6 +2087,7 @@ static lv_obj_t* create_set_log_level_screen(lv_obj_t *logs_menu_ref) {
 
     // Back button
     lv_obj_t *back_btn = lv_btn_create(screen);
+    lv_obj_add_flag(back_btn, LV_OBJ_FLAG_EVENT_BUBBLE);  // Enable gesture passthrough
     lv_obj_set_size(back_btn, 150, 50);
     lv_obj_align(back_btn, LV_ALIGN_BOTTOM_LEFT, 30, -20);
     THEME_STYLE_BUTTON(back_btn, THEME_BTN_CANCEL);
@@ -2125,6 +2146,7 @@ static lv_obj_t* create_clear_gps_screen(lv_obj_t *tools_screen_ref) {
 
     // Confirm button
     lv_obj_t *confirm_btn = lv_btn_create(screen);
+    lv_obj_add_flag(confirm_btn, LV_OBJ_FLAG_EVENT_BUBBLE);  // Enable gesture passthrough
     lv_obj_set_size(confirm_btn, 150, 50);
     lv_obj_align(confirm_btn, LV_ALIGN_BOTTOM_RIGHT, -30, -20);
     lv_obj_set_style_bg_color(confirm_btn, lv_color_hex(0xFF3333), 0);
@@ -2137,6 +2159,7 @@ static lv_obj_t* create_clear_gps_screen(lv_obj_t *tools_screen_ref) {
 
     // Cancel button
     lv_obj_t *cancel_btn = lv_btn_create(screen);
+    lv_obj_add_flag(cancel_btn, LV_OBJ_FLAG_EVENT_BUBBLE);  // Enable gesture passthrough
     lv_obj_set_size(cancel_btn, 150, 50);
     lv_obj_align(cancel_btn, LV_ALIGN_BOTTOM_LEFT, 30, -20);
     THEME_STYLE_BUTTON(cancel_btn, THEME_BTN_CANCEL);
@@ -2197,6 +2220,7 @@ static lv_obj_t* create_wifi_bluetooth_screen(lv_obj_t *tools_screen_ref) {
 
     // WiFi button
     lv_obj_t *wifi_btn = lv_btn_create(screen);
+    lv_obj_add_flag(wifi_btn, LV_OBJ_FLAG_EVENT_BUBBLE);  // Enable gesture passthrough
     lv_obj_set_size(wifi_btn, 300, 80);
     lv_obj_align(wifi_btn, LV_ALIGN_CENTER, 0, -60);
     THEME_STYLE_BUTTON(wifi_btn, COLOR_PRIMARY);
@@ -2209,6 +2233,7 @@ static lv_obj_t* create_wifi_bluetooth_screen(lv_obj_t *tools_screen_ref) {
 
     // Bluetooth button
     lv_obj_t *bt_btn = lv_btn_create(screen);
+    lv_obj_add_flag(bt_btn, LV_OBJ_FLAG_EVENT_BUBBLE);  // Enable gesture passthrough
     lv_obj_set_size(bt_btn, 300, 80);
     lv_obj_align(bt_btn, LV_ALIGN_CENTER, 0, 40);
     THEME_STYLE_BUTTON(bt_btn, COLOR_PRIMARY);
@@ -2221,6 +2246,7 @@ static lv_obj_t* create_wifi_bluetooth_screen(lv_obj_t *tools_screen_ref) {
 
     // Back button
     lv_obj_t *back_btn = lv_btn_create(screen);
+    lv_obj_add_flag(back_btn, LV_OBJ_FLAG_EVENT_BUBBLE);  // Enable gesture passthrough
     lv_obj_set_size(back_btn, 150, 50);
     lv_obj_align(back_btn, LV_ALIGN_BOTTOM_LEFT, 30, -20);
     THEME_STYLE_BUTTON(back_btn, THEME_BTN_CANCEL);
@@ -2435,6 +2461,7 @@ static void wifi_adhoc_clicked(lv_event_t *e) {
 
     // Create and Cancel buttons
     lv_obj_t *create_btn = lv_btn_create(adhoc_modal);
+    lv_obj_add_flag(create_btn, LV_OBJ_FLAG_EVENT_BUBBLE);  // Enable gesture passthrough
     lv_obj_set_size(create_btn, 250, 45);
     lv_obj_align(create_btn, LV_ALIGN_BOTTOM_LEFT, 30, -10);
     lv_obj_set_style_bg_color(create_btn, lv_color_hex(0x00AA00), 0);  // Green
@@ -2446,6 +2473,7 @@ static void wifi_adhoc_clicked(lv_event_t *e) {
     lv_obj_center(create_label);
 
     lv_obj_t *cancel_btn = lv_btn_create(adhoc_modal);
+    lv_obj_add_flag(cancel_btn, LV_OBJ_FLAG_EVENT_BUBBLE);  // Enable gesture passthrough
     lv_obj_set_size(cancel_btn, 250, 45);
     lv_obj_align(cancel_btn, LV_ALIGN_BOTTOM_RIGHT, -30, -10);
     THEME_STYLE_BUTTON(cancel_btn, THEME_BTN_CANCEL);
@@ -2723,6 +2751,7 @@ static void wifi_network_clicked(lv_event_t *e) {
 
         // Connect button (positioned after keyboard with gap)
         lv_obj_t *connect_btn = lv_btn_create(wifi_password_screen);
+        lv_obj_add_flag(connect_btn, LV_OBJ_FLAG_EVENT_BUBBLE);  // Enable gesture passthrough
         lv_obj_set_size(connect_btn, 220, 45);
         lv_obj_align(connect_btn, LV_ALIGN_TOP_LEFT, 25, 310);
         THEME_STYLE_BUTTON(connect_btn, COLOR_PRIMARY);
@@ -2735,6 +2764,7 @@ static void wifi_network_clicked(lv_event_t *e) {
 
         // Cancel button (positioned after keyboard with gap)
         lv_obj_t *cancel_btn = lv_btn_create(wifi_password_screen);
+        lv_obj_add_flag(cancel_btn, LV_OBJ_FLAG_EVENT_BUBBLE);  // Enable gesture passthrough
         lv_obj_set_size(cancel_btn, 220, 45);
         lv_obj_align(cancel_btn, LV_ALIGN_TOP_RIGHT, -25, 310);
         THEME_STYLE_BUTTON(cancel_btn, THEME_BTN_CANCEL);
@@ -2855,6 +2885,7 @@ static lv_obj_t* create_wifi_setup_screen(lv_obj_t *menu_screen_ref) {
 
     // SCAN button (left)
     lv_obj_t *scan_btn = lv_btn_create(screen);
+    lv_obj_add_flag(scan_btn, LV_OBJ_FLAG_EVENT_BUBBLE);  // Enable gesture passthrough
     lv_obj_set_size(scan_btn, 200, 50);
     lv_obj_align(scan_btn, LV_ALIGN_TOP_LEFT, 30, HEADER_HEIGHT + 130);
     apply_3d_button_style(scan_btn, COLOR_PRIMARY);
@@ -2867,6 +2898,7 @@ static lv_obj_t* create_wifi_setup_screen(lv_obj_t *menu_screen_ref) {
 
     // ADHOC button (middle) - Create local WiFi network
     lv_obj_t *adhoc_btn = lv_btn_create(screen);
+    lv_obj_add_flag(adhoc_btn, LV_OBJ_FLAG_EVENT_BUBBLE);  // Enable gesture passthrough
     lv_obj_set_size(adhoc_btn, 200, 50);
     lv_obj_align(adhoc_btn, LV_ALIGN_TOP_MID, 0, HEADER_HEIGHT + 130);
     apply_3d_button_style(adhoc_btn, COLOR_PRIMARY);
@@ -2879,6 +2911,7 @@ static lv_obj_t* create_wifi_setup_screen(lv_obj_t *menu_screen_ref) {
 
     // FORGET button (right) - Delete saved credentials
     lv_obj_t *forget_btn = lv_btn_create(screen);
+    lv_obj_add_flag(forget_btn, LV_OBJ_FLAG_EVENT_BUBBLE);  // Enable gesture passthrough
     lv_obj_set_size(forget_btn, 200, 50);
     lv_obj_align(forget_btn, LV_ALIGN_TOP_RIGHT, -30, HEADER_HEIGHT + 130);
     apply_3d_button_style(forget_btn, THEME_BTN_DANGER);
@@ -2891,6 +2924,7 @@ static lv_obj_t* create_wifi_setup_screen(lv_obj_t *menu_screen_ref) {
 
     // Test Connection button (second row, left)
     lv_obj_t *test_btn = lv_btn_create(screen);
+    lv_obj_add_flag(test_btn, LV_OBJ_FLAG_EVENT_BUBBLE);  // Enable gesture passthrough
     lv_obj_set_size(test_btn, 200, 50);
     lv_obj_align(test_btn, LV_ALIGN_TOP_LEFT, 30, HEADER_HEIGHT + 190);
     apply_3d_button_style(test_btn, COLOR_PRIMARY);
@@ -2903,6 +2937,7 @@ static lv_obj_t* create_wifi_setup_screen(lv_obj_t *menu_screen_ref) {
 
     // Disconnect button (second row, right)
     lv_obj_t *disconnect_btn = lv_btn_create(screen);
+    lv_obj_add_flag(disconnect_btn, LV_OBJ_FLAG_EVENT_BUBBLE);  // Enable gesture passthrough
     lv_obj_set_size(disconnect_btn, 200, 50);
     lv_obj_align(disconnect_btn, LV_ALIGN_TOP_RIGHT, -30, HEADER_HEIGHT + 190);
     apply_3d_button_style(disconnect_btn, THEME_BTN_DANGER);
@@ -2928,6 +2963,7 @@ static lv_obj_t* create_wifi_setup_screen(lv_obj_t *menu_screen_ref) {
 
     // Back button
     lv_obj_t *back_btn = lv_btn_create(screen);
+    lv_obj_add_flag(back_btn, LV_OBJ_FLAG_EVENT_BUBBLE);  // Enable gesture passthrough
     lv_obj_set_size(back_btn, 150, 50);
     lv_obj_align(back_btn, LV_ALIGN_BOTTOM_LEFT, 30, -20);
     apply_3d_button_style(back_btn, THEME_BTN_CANCEL);
@@ -2990,6 +3026,7 @@ static lv_obj_t* create_bluetooth_setup_screen(lv_obj_t *menu_screen_ref) {
 
     // Back button
     lv_obj_t *back_btn = lv_btn_create(screen);
+    lv_obj_add_flag(back_btn, LV_OBJ_FLAG_EVENT_BUBBLE);  // Enable gesture passthrough
     lv_obj_set_size(back_btn, 150, 50);
     lv_obj_align(back_btn, LV_ALIGN_BOTTOM_LEFT, 30, -20);
     THEME_STYLE_BUTTON(back_btn, THEME_BTN_CANCEL);
@@ -3218,6 +3255,7 @@ static lv_obj_t* create_system_config_screen(lv_obj_t *tools_screen_ref) {
 
     // Save to NVS button
     lv_obj_t *save_nvs_btn = lv_btn_create(screen);
+    lv_obj_add_flag(save_nvs_btn, LV_OBJ_FLAG_EVENT_BUBBLE);  // Enable gesture passthrough
     lv_obj_set_size(save_nvs_btn, btn_width, 50);
     lv_obj_set_pos(save_nvs_btn, start_x, btn_y);
     lv_obj_set_style_bg_color(save_nvs_btn, lv_color_hex(COLOR_SUCCESS), 0);
@@ -3230,6 +3268,7 @@ static lv_obj_t* create_system_config_screen(lv_obj_t *tools_screen_ref) {
 
     // Load from SD button
     lv_obj_t *load_sd_btn = lv_btn_create(screen);
+    lv_obj_add_flag(load_sd_btn, LV_OBJ_FLAG_EVENT_BUBBLE);  // Enable gesture passthrough
     lv_obj_set_size(load_sd_btn, btn_width, 50);
     lv_obj_set_pos(load_sd_btn, start_x + btn_width + btn_spacing, btn_y);
     THEME_STYLE_BUTTON(load_sd_btn, THEME_BTN_PRIMARY);
@@ -3242,6 +3281,7 @@ static lv_obj_t* create_system_config_screen(lv_obj_t *tools_screen_ref) {
 
     // Save to SD button
     lv_obj_t *save_sd_btn = lv_btn_create(screen);
+    lv_obj_add_flag(save_sd_btn, LV_OBJ_FLAG_EVENT_BUBBLE);  // Enable gesture passthrough
     lv_obj_set_size(save_sd_btn, btn_width, 50);
     lv_obj_set_pos(save_sd_btn, start_x + (btn_width + btn_spacing) * 2, btn_y);
     THEME_STYLE_BUTTON(save_sd_btn, THEME_BTN_PRIMARY);
@@ -3254,6 +3294,7 @@ static lv_obj_t* create_system_config_screen(lv_obj_t *tools_screen_ref) {
 
     // Cancel button
     lv_obj_t *cancel_btn = lv_btn_create(screen);
+    lv_obj_add_flag(cancel_btn, LV_OBJ_FLAG_EVENT_BUBBLE);  // Enable gesture passthrough
     lv_obj_set_size(cancel_btn, btn_width, 50);
     lv_obj_set_pos(cancel_btn, start_x + (btn_width + btn_spacing) * 3, btn_y);
     THEME_STYLE_BUTTON(cancel_btn, THEME_BTN_CANCEL);
@@ -3302,6 +3343,7 @@ static lv_obj_t* create_save_config_screen(lv_obj_t *tools_screen_ref) {
 
     // Back button
     lv_obj_t *back_btn = lv_btn_create(screen);
+    lv_obj_add_flag(back_btn, LV_OBJ_FLAG_EVENT_BUBBLE);  // Enable gesture passthrough
     lv_obj_set_size(back_btn, 150, 50);
     lv_obj_align(back_btn, LV_ALIGN_BOTTOM_LEFT, 30, -20);
     THEME_STYLE_BUTTON(back_btn, THEME_BTN_CANCEL);
@@ -3350,6 +3392,7 @@ static lv_obj_t* create_load_config_screen(lv_obj_t *tools_screen_ref) {
 
     // Back button
     lv_obj_t *back_btn = lv_btn_create(screen);
+    lv_obj_add_flag(back_btn, LV_OBJ_FLAG_EVENT_BUBBLE);  // Enable gesture passthrough
     lv_obj_set_size(back_btn, 150, 50);
     lv_obj_align(back_btn, LV_ALIGN_BOTTOM_LEFT, 30, -20);
     THEME_STYLE_BUTTON(back_btn, THEME_BTN_CANCEL);
@@ -3410,6 +3453,7 @@ static lv_obj_t* create_factory_reset_screen(lv_obj_t *tools_screen_ref) {
 
     // Confirm button
     lv_obj_t *confirm_btn = lv_btn_create(screen);
+    lv_obj_add_flag(confirm_btn, LV_OBJ_FLAG_EVENT_BUBBLE);  // Enable gesture passthrough
     lv_obj_set_size(confirm_btn, 150, 50);
     lv_obj_align(confirm_btn, LV_ALIGN_BOTTOM_RIGHT, -30, -20);
     lv_obj_set_style_bg_color(confirm_btn, lv_color_hex(0xFF0000), 0);
@@ -3422,6 +3466,7 @@ static lv_obj_t* create_factory_reset_screen(lv_obj_t *tools_screen_ref) {
 
     // Cancel button
     lv_obj_t *cancel_btn = lv_btn_create(screen);
+    lv_obj_add_flag(cancel_btn, LV_OBJ_FLAG_EVENT_BUBBLE);  // Enable gesture passthrough
     lv_obj_set_size(cancel_btn, 150, 50);
     lv_obj_align(cancel_btn, LV_ALIGN_BOTTOM_LEFT, 30, -20);
     THEME_STYLE_BUTTON(cancel_btn, THEME_BTN_CANCEL);
@@ -3684,6 +3729,7 @@ lv_obj_t* create_display_screen(ui_footer_page_cb_t page_callback, lv_obj_t **fo
 
     // Anchor button (center) - Smaller, screen-centered
     lv_obj_t *anchor_btn = lv_btn_create(screen);
+    lv_obj_add_flag(anchor_btn, LV_OBJ_FLAG_EVENT_BUBBLE);  // Enable gesture passthrough
     lv_obj_set_size(anchor_btn, 200, 200);
     lv_obj_align(anchor_btn, LV_ALIGN_CENTER, 0, 0);
     THEME_STYLE_BUTTON(anchor_btn, COLOR_PRIMARY);
@@ -3747,6 +3793,7 @@ static void test_back_clicked(lv_event_t *e) {
 static lv_obj_t* create_test_toggle(lv_obj_t *parent, const char *label, const char *state,
                                      uint32_t color, int x, int y, lv_event_cb_t callback) {
     lv_obj_t *btn = lv_btn_create(parent);
+    lv_obj_add_flag(btn, LV_OBJ_FLAG_EVENT_BUBBLE);  // Enable gesture passthrough
     lv_obj_set_size(btn, 140, 80);
     lv_obj_set_pos(btn, x, y);
     THEME_STYLE_BUTTON(btn, color);
@@ -3813,6 +3860,7 @@ lv_obj_t* create_test_screen(ui_styles_t* styles) {
 
     // Back button
     lv_obj_t *back_btn = lv_btn_create(screen);
+    lv_obj_add_flag(back_btn, LV_OBJ_FLAG_EVENT_BUBBLE);  // Enable gesture passthrough
     lv_obj_set_size(back_btn, 200, 50);
     lv_obj_align(back_btn, LV_ALIGN_BOTTOM_LEFT, 30, -10);
     THEME_STYLE_BUTTON(back_btn, THEME_BTN_PRIMARY);
