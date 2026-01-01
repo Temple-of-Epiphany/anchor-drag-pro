@@ -790,6 +790,7 @@ static void config_gps_source_clicked(lv_event_t *e) {
 
     // Create modal screen overlay (increased height for Save/Cancel buttons)
     lv_obj_t *modal = lv_obj_create(lv_scr_act());
+    lv_obj_add_flag(modal, LV_OBJ_FLAG_EVENT_BUBBLE);  // Enable gesture passthrough
     lv_obj_set_size(modal, 500, 480);  // Increased from 440 to 480 for better spacing
     lv_obj_center(modal);
     lv_obj_add_style(modal, ui_styles_get_panel(g_screen_styles), 0);
@@ -949,6 +950,7 @@ static void config_btn7_clicked(lv_event_t *e) {
 
     // Create PGN selection modal
     lv_obj_t *modal = lv_obj_create(lv_scr_act());
+    lv_obj_add_flag(modal, LV_OBJ_FLAG_EVENT_BUBBLE);  // Enable gesture passthrough
     lv_obj_set_size(modal, 600, 450);
     lv_obj_center(modal);
     lv_obj_add_style(modal, ui_styles_get_panel(g_screen_styles), 0);
@@ -2383,6 +2385,7 @@ static void wifi_adhoc_clicked(lv_event_t *e) {
 
     // Create ADHOC configuration modal
     adhoc_modal = lv_obj_create(lv_scr_act());
+    lv_obj_add_flag(adhoc_modal, LV_OBJ_FLAG_EVENT_BUBBLE);  // Enable gesture passthrough
     lv_obj_set_size(adhoc_modal, 650, 450);
     lv_obj_center(adhoc_modal);
     lv_obj_set_style_bg_color(adhoc_modal, lv_color_hex(0x1a1a1a), 0);
@@ -2682,6 +2685,7 @@ static void wifi_network_clicked(lv_event_t *e) {
 
         // Create password entry screen
         wifi_password_screen = lv_obj_create(lv_scr_act());
+        lv_obj_add_flag(wifi_password_screen, LV_OBJ_FLAG_EVENT_BUBBLE);  // Enable gesture passthrough
         lv_obj_set_size(wifi_password_screen, 600, 400);
         lv_obj_center(wifi_password_screen);
         lv_obj_set_style_bg_color(wifi_password_screen, lv_color_hex(0x1a1a1a), 0);
