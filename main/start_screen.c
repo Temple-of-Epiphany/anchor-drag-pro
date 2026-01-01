@@ -95,7 +95,7 @@ esp_err_t start_screen_create(void) {
 
     // Create header bar
     ESP_LOGI(TAG, "Creating header bar...");
-    header = ui_header_create(start_screen);
+    header = ui_header_create(start_screen, NULL);
     if (header == NULL) {
         ESP_LOGE(TAG, "ERROR: Failed to create header");
         lvgl_unlock();
@@ -110,7 +110,7 @@ esp_err_t start_screen_create(void) {
 
     // Create footer navigation bar (START = page 0) with callback
     ESP_LOGI(TAG, "Creating footer navigation bar...");
-    footer = ui_footer_create(start_screen, PAGE_START, footer_page_callback);
+    footer = ui_footer_create(start_screen, PAGE_START, footer_page_callback, NULL);
     if (footer == NULL) {
         ESP_LOGE(TAG, "ERROR: Failed to create footer");
         lvgl_unlock();

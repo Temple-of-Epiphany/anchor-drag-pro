@@ -73,7 +73,7 @@ ui_styles_t* ui_styles_create(void) {
     // Initialize body text style
     lv_style_init(&styles->body_text);
     lv_style_set_text_color(&styles->body_text, lv_color_hex(COLOR_TEXT_PRIMARY));
-    lv_style_set_text_font(&styles->body_text, FONT_BODY);
+    lv_style_set_text_font(&styles->body_text, FONT_BODY_NORMAL);
 
     // Initialize 3D button base style (shadow effects, rounded corners)
     lv_style_init(&styles->button_3d);
@@ -93,23 +93,23 @@ ui_styles_t* ui_styles_create(void) {
 
     // Initialize button color variants
     lv_style_init(&styles->button_green);
-    lv_style_set_bg_color(&styles->button_green, lv_color_hex(COLOR_BUTTON_GREEN));
-    lv_style_set_bg_grad_color(&styles->button_green, lv_color_hex(COLOR_BUTTON_GREEN - 0x202020));
+    lv_style_set_bg_color(&styles->button_green, lv_color_hex(0x00AA00));
+    lv_style_set_bg_grad_color(&styles->button_green, lv_color_hex(0x008A00));
     lv_style_set_bg_grad_dir(&styles->button_green, LV_GRAD_DIR_VER);
 
     lv_style_init(&styles->button_red);
-    lv_style_set_bg_color(&styles->button_red, lv_color_hex(COLOR_BUTTON_RED));
-    lv_style_set_bg_grad_color(&styles->button_red, lv_color_hex(COLOR_BUTTON_RED - 0x202020));
+    lv_style_set_bg_color(&styles->button_red, lv_color_hex(COLOR_DANGER));
+    lv_style_set_bg_grad_color(&styles->button_red, lv_color_hex(0xDF2116));
     lv_style_set_bg_grad_dir(&styles->button_red, LV_GRAD_DIR_VER);
 
     lv_style_init(&styles->button_yellow);
-    lv_style_set_bg_color(&styles->button_yellow, lv_color_hex(COLOR_BUTTON_YELLOW));
-    lv_style_set_bg_grad_color(&styles->button_yellow, lv_color_hex(COLOR_BUTTON_YELLOW - 0x202020));
+    lv_style_set_bg_color(&styles->button_yellow, lv_color_hex(COLOR_WARNING));
+    lv_style_set_bg_grad_color(&styles->button_yellow, lv_color_hex(0xDFBC00));
     lv_style_set_bg_grad_dir(&styles->button_yellow, LV_GRAD_DIR_VER);
 
     lv_style_init(&styles->button_blue);
-    lv_style_set_bg_color(&styles->button_blue, lv_color_hex(COLOR_BUTTON_BLUE));
-    lv_style_set_bg_grad_color(&styles->button_blue, lv_color_hex(COLOR_BUTTON_BLUE - 0x202020));
+    lv_style_set_bg_color(&styles->button_blue, lv_color_hex(COLOR_PRIMARY));
+    lv_style_set_bg_grad_color(&styles->button_blue, lv_color_hex(0x0054B9));
     lv_style_set_bg_grad_dir(&styles->button_blue, LV_GRAD_DIR_VER);
 
     lv_style_init(&styles->button_gray);

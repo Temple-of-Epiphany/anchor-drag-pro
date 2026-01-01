@@ -218,7 +218,7 @@ lv_obj_t* create_datetime_settings_screen(lv_obj_t *tools_screen_ref, ui_footer_
     lv_obj_set_style_bg_color(screen, lv_color_hex(0x1A1A2E), 0);
 
     // Create header
-    lv_obj_t *header = ui_header_create(screen);
+    lv_obj_t *header = ui_header_create(screen, NULL);
     ui_header_set_gps_status(header, false);
 
     // Title
@@ -361,7 +361,7 @@ lv_obj_t* create_datetime_settings_screen(lv_obj_t *tools_screen_ref, ui_footer_
     lv_obj_center(cancel_label);
 
     // Create footer (hidden by default for more space)
-    lv_obj_t *footer = ui_footer_create(screen, PAGE_TOOLS, page_callback);
+    lv_obj_t *footer = ui_footer_create(screen, PAGE_TOOLS, page_callback, NULL);
     if (footer != NULL) {
         ui_footer_hide(footer);  // Hide footer for more screen space
     }

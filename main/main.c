@@ -694,7 +694,7 @@ void app_main(void)
         lv_obj_align(version_label, LV_ALIGN_BOTTOM_RIGHT, -10, -70);  // Bottom right, above footer area
 
         // Create scrollable footer navigation bar at bottom
-        g_footer = ui_footer_create(splash_screen, PAGE_START, footer_page_callback);
+        g_footer = ui_footer_create(splash_screen, PAGE_START, footer_page_callback, g_styles);
         if (g_footer == NULL) {
             ESP_LOGE(TAG, "Failed to create footer");
         } else {

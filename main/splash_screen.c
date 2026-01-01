@@ -75,7 +75,7 @@ static void create_splash_ui(void) {
     lv_obj_set_style_bg_opa(splash_screen, LV_OPA_COVER, 0);  // Fully opaque
 
     // Status header (full-width bar at top with title)
-    status_header = ui_header_create(splash_screen);
+    status_header = ui_header_create(splash_screen, NULL);
     ui_header_set_gps_status(status_header, false);
     ui_header_set_compass_status(status_header, false);
 

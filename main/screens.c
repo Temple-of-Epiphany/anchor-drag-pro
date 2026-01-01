@@ -103,13 +103,13 @@ static void apply_3d_button_style(lv_obj_t *btn, uint32_t color) {
     lv_style_t *color_style = NULL;
 
     // Check common color mappings
-    if (color == COLOR_BUTTON_GREEN || color == 0x00AA00 || color == 0x2ECC40 || color == COLOR_SUCCESS) {
+    if (color == 0x00AA00 || color == 0x2ECC40 || color == COLOR_SUCCESS) {
         color_style = ui_styles_get_button_green(g_screen_styles);
-    } else if (color == COLOR_BUTTON_RED || color == 0xFF4136 || color == COLOR_DANGER) {
+    } else if (color == 0xFF4136 || color == COLOR_DANGER) {
         color_style = ui_styles_get_button_red(g_screen_styles);
-    } else if (color == COLOR_BUTTON_YELLOW || color == 0xFFDC00) {
+    } else if (color == 0xFFDC00) {
         color_style = ui_styles_get_button_yellow(g_screen_styles);
-    } else if (color == COLOR_BUTTON_BLUE || color == 0x0074D9 || color == COLOR_PRIMARY) {
+    } else if (color == 0x0074D9 || color == COLOR_PRIMARY) {
         color_style = ui_styles_get_button_blue(g_screen_styles);
     } else if (color == COLOR_DISABLED || color == 0xAAAAAA || color == THEME_BTN_CANCEL) {
         color_style = ui_styles_get_button_gray(g_screen_styles);
@@ -174,7 +174,7 @@ static void btn_ready_clicked(lv_event_t *e) {
     ESP_LOGI(TAG, "READY button clicked - Activating anchor monitoring");
     // Navigate to DISPLAY screen (main operating screen with footer)
     if (g_page_callback != NULL) {
-        lv_obj_t *display_screen = create_display_screen(g_page_callback, NULL);
+        lv_obj_t *display_screen = create_display_screen(g_page_callback, NULL, g_screen_styles);
         lv_scr_load(display_screen);
     } else {
         ESP_LOGW(TAG, "Page callback not set, cannot navigate to DISPLAY screen");
@@ -185,7 +185,7 @@ static void btn_info_clicked(lv_event_t *e) {
     ESP_LOGI(TAG, "INFO button clicked - View GPS & Compass details");
     // Navigate to INFO screen (POSITION & NAVIGATION)
     if (g_page_callback != NULL) {
-        lv_obj_t *info_screen = create_info_screen(g_page_callback, NULL);
+        lv_obj_t *info_screen = create_info_screen(g_page_callback, NULL, g_screen_styles);
         lv_scr_load(info_screen);
     } else {
         ESP_LOGW(TAG, "Page callback not set, cannot navigate to INFO screen");
@@ -196,7 +196,7 @@ static void btn_config_clicked(lv_event_t *e) {
     ESP_LOGI(TAG, "CONFIG button clicked - Configure system settings");
     // Navigate to CONFIG screen
     if (g_page_callback != NULL) {
-        lv_obj_t *config_screen = create_config_screen(g_page_callback, NULL);
+        lv_obj_t *config_screen = create_config_screen(g_page_callback, NULL, g_screen_styles);
         lv_scr_load(config_screen);
     } else {
         ESP_LOGW(TAG, "Page callback not set, cannot navigate to CONFIG screen");
@@ -792,14 +792,14 @@ static void config_gps_source_clicked(lv_event_t *e) {
     lv_obj_t *modal = lv_obj_create(lv_scr_act());
     lv_obj_set_size(modal, 500, 480);  // Increased from 440 to 480 for better spacing
     lv_obj_center(modal);
-    lv_obj_add_style(modal, ui_styles_get_panel(styles), 0);
+    lv_obj_add_style(modal, ui_styles_get_panel(g_screen_styles), 0);
     lv_obj_set_style_border_color(modal, lv_color_hex(0x00AA00), 0);
     lv_obj_set_style_border_width(modal, 2, 0);
 
     // Title
     lv_obj_t *title = lv_label_create(modal);
     lv_label_set_text(title, "GPS Source");
-    lv_obj_add_style(title, ui_styles_get_title(styles), 0);
+    lv_obj_add_style(title, ui_styles_get_title(g_screen_styles), 0);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 10);
 
     // Description
@@ -951,14 +951,14 @@ static void config_btn7_clicked(lv_event_t *e) {
     lv_obj_t *modal = lv_obj_create(lv_scr_act());
     lv_obj_set_size(modal, 600, 450);
     lv_obj_center(modal);
-    lv_obj_add_style(modal, ui_styles_get_panel(styles), 0);
+    lv_obj_add_style(modal, ui_styles_get_panel(g_screen_styles), 0);
     lv_obj_set_style_border_color(modal, lv_color_hex(0x00AA00), 0);
     lv_obj_set_style_border_width(modal, 2, 0);
 
     // Title
     lv_obj_t *title = lv_label_create(modal);
     lv_label_set_text(title, "PGN Selection");
-    lv_obj_add_style(title, ui_styles_get_title(styles), 0);
+    lv_obj_add_style(title, ui_styles_get_title(g_screen_styles), 0);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 10);
 
     // GPS Section
