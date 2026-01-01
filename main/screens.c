@@ -20,6 +20,7 @@
 #include "datetime_settings.h"
 #include "power_management.h"
 #include "sd_card.h"
+#include "lvgl_init.h"
 #include "esp_log.h"
 #include "esp_system.h"
 #include "esp_chip_info.h"
@@ -27,11 +28,22 @@
 #include "esp_heap_caps.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "nvs_flash.h"
+#include "nvs.h"
 #if ENABLE_WIFI
 #include "wifi_manager.h"
 #endif
+#include "gps_manager.h"
 
 static const char *TAG = "screens";
+
+// Global style manager reference (for use in callbacks that don't receive styles parameter)
+static ui_styles_t *g_screen_styles = NULL;
+
+// Global references for Position screen (for live GPS updates)
+static lv_obj_t *g_position_compass_label = NULL;
+static lv_obj_t *g_position_gps_label = NULL;
+static lv_timer_t *g_position_update_timer = NULL;
 
 // Static storage for page callback (used for START screen button navigation)
 static ui_footer_page_cb_t g_page_callback = NULL;
@@ -41,6 +53,75 @@ static lv_obj_t* create_wifi_setup_screen(lv_obj_t *menu_screen_ref);
 static lv_obj_t* create_bluetooth_setup_screen(lv_obj_t *menu_screen_ref);
 static lv_obj_t* create_tool_button(lv_obj_t *parent, const char *label, int x, int y, lv_event_cb_t callback);
 static lv_obj_t* create_tfcard_screen(lv_obj_t *tools_screen_ref);
+static void tools_wifi_bt_clicked(lv_event_t *e);
+
+// ============================================================================
+// 3D Button Styling Helpers (Global)
+// ============================================================================
+
+/**
+ * Handle button press/release events for 3D feedback
+ */
+static void button_3d_event_handler(lv_event_t *e) {
+    lv_event_code_t code = lv_event_get_code(e);
+    lv_obj_t *btn = lv_event_get_target(e);
+
+    if (code == LV_EVENT_PRESSED) {
+        // Pressed state: reduce shadow and translate down
+        lv_obj_set_style_shadow_width(btn, 5, LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_shadow_ofs_y(btn, 2, LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_translate_y(btn, 2, LV_PART_MAIN | LV_STATE_DEFAULT);
+    } else if (code == LV_EVENT_RELEASED || code == LV_EVENT_PRESS_LOST) {
+        // Released state: restore original appearance
+        lv_obj_set_style_shadow_width(btn, 10, LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_shadow_ofs_y(btn, 5, LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_translate_y(btn, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+    }
+}
+
+/**
+ * Apply 3D styling to any button using style manager
+ * @param btn Button object to style
+ * @param color Background color (hex value) - mapped to appropriate style
+ *
+ * Note: Now uses ui_styles for consistent styling
+ */
+static void apply_3d_button_style(lv_obj_t *btn, uint32_t color) {
+    if (g_screen_styles == NULL) {
+        ESP_LOGW(TAG, "Style manager not initialized, using inline styles");
+        // Fallback to inline styles if style manager not available
+        lv_obj_set_style_shadow_width(btn, 10, LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_shadow_color(btn, lv_color_hex(0x000000), LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_shadow_opa(btn, LV_OPA_50, LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_shadow_ofs_y(btn, 5, LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_radius(btn, 8, LV_PART_MAIN | LV_STATE_DEFAULT);
+        lv_obj_set_style_bg_color(btn, lv_color_hex(color), LV_PART_MAIN | LV_STATE_DEFAULT);
+        return;
+    }
+
+    // Map color to appropriate style object
+    lv_style_t *color_style = NULL;
+
+    // Check common color mappings
+    if (color == COLOR_BUTTON_GREEN || color == 0x00AA00 || color == 0x2ECC40 || color == COLOR_SUCCESS) {
+        color_style = ui_styles_get_button_green(g_screen_styles);
+    } else if (color == COLOR_BUTTON_RED || color == 0xFF4136 || color == COLOR_DANGER) {
+        color_style = ui_styles_get_button_red(g_screen_styles);
+    } else if (color == COLOR_BUTTON_YELLOW || color == 0xFFDC00) {
+        color_style = ui_styles_get_button_yellow(g_screen_styles);
+    } else if (color == COLOR_BUTTON_BLUE || color == 0x0074D9 || color == COLOR_PRIMARY) {
+        color_style = ui_styles_get_button_blue(g_screen_styles);
+    } else if (color == COLOR_DISABLED || color == 0xAAAAAA || color == THEME_BTN_CANCEL) {
+        color_style = ui_styles_get_button_gray(g_screen_styles);
+    } else {
+        // Default to blue for unknown colors
+        color_style = ui_styles_get_button_blue(g_screen_styles);
+        ESP_LOGD(TAG, "Unknown button color 0x%06lX, using blue", color);
+    }
+
+    // Apply style using style manager
+    ui_styles_apply_button(g_screen_styles, btn, color_style);
+}
 
 /**
  * Header icon click callbacks
@@ -133,8 +214,11 @@ static lv_obj_t* create_mode_button(lv_obj_t *parent, const char *icon, const ch
     lv_obj_set_size(btn, BUTTON_WIDTH_LARGE, BUTTON_HEIGHT_MEDIUM);
     lv_obj_align(btn, LV_ALIGN_TOP_MID, 0, y_offset);
 
-    // Apply theme styling
-    THEME_STYLE_BUTTON(btn, bg_color);
+    // Apply 3D button styling
+    apply_3d_button_style(btn, bg_color);
+
+    // Enable event bubbling so gestures work even when touching buttons
+    lv_obj_add_flag(btn, LV_OBJ_FLAG_EVENT_BUBBLE);
 
     // Add click event
     lv_obj_add_event_cb(btn, event_cb, LV_EVENT_CLICKED, NULL);
@@ -160,20 +244,20 @@ static lv_obj_t* create_mode_button(lv_obj_t *parent, const char *icon, const ch
  */
 static lv_obj_t* create_base_screen(const char *title, ui_page_t page, ui_footer_page_cb_t page_callback, lv_obj_t **footer_out) {
     lv_obj_t *screen = lv_obj_create(NULL);
-    lv_obj_set_style_bg_color(screen, lv_color_hex(THEME_SCREEN_BG), 0);
+    lv_obj_add_style(screen, ui_styles_get_screen_bg(g_screen_styles), 0);
 
     // Create header bar with satellite icon
-    lv_obj_t *header = ui_header_create(screen);
+    lv_obj_t *header = ui_header_create(screen, g_screen_styles);
     ui_header_set_gps_status(header, false);  // Default to GPS not found
 
     // Create title label (positioned below header)
     lv_obj_t *title_label = lv_label_create(screen);
     lv_label_set_text(title_label, title);
-    THEME_STYLE_TEXT(title_label, THEME_TITLE_COLOR, FONT_TITLE);
+    lv_obj_add_style(title_label, ui_styles_get_title(g_screen_styles), 0);
     lv_obj_align(title_label, LV_ALIGN_TOP_MID, 0, HEADER_HEIGHT + SPACING_MARGIN_SMALL);
 
     // Create footer navigation bar
-    lv_obj_t *footer = ui_footer_create(screen, page, page_callback);
+    lv_obj_t *footer = ui_footer_create(screen, page, page_callback, g_screen_styles);
 
     // Ensure footer is visible and in foreground
     if (footer != NULL) {
@@ -191,16 +275,17 @@ static lv_obj_t* create_base_screen(const char *title, ui_page_t page, ui_footer
     return screen;
 }
 
-lv_obj_t* create_start_screen(ui_footer_page_cb_t page_callback, lv_obj_t **footer_out) {
-    // Store page callback for button navigation
+lv_obj_t* create_start_screen(ui_footer_page_cb_t page_callback, lv_obj_t **footer_out, ui_styles_t* styles) {
+    // Store references for use in callbacks
     g_page_callback = page_callback;
+    g_screen_styles = styles;  // Store for callbacks that don't receive styles parameter
 
     // Create screen with Marine Blue background (per UI spec)
     lv_obj_t *screen = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(screen, lv_color_hex(THEME_START_SCREEN_BG), 0);
 
     // Create header bar with satellite icon
-    lv_obj_t *header = ui_header_create(screen);
+    lv_obj_t *header = ui_header_create(screen, styles);
     ui_header_set_gps_status(header, false);  // Default to GPS not found
 
     // Create "SELECT MODE" title (positioned below header)
@@ -212,7 +297,7 @@ lv_obj_t* create_start_screen(ui_footer_page_cb_t page_callback, lv_obj_t **foot
     // Create subtitle
     lv_obj_t *subtitle_label = lv_label_create(screen);
     lv_label_set_text(subtitle_label, "Choose your operating mode");
-    THEME_STYLE_TEXT(subtitle_label, THEME_SUBTITLE_COLOR, FONT_SUBTITLE);
+    lv_obj_add_style(subtitle_label, ui_styles_get_subtitle(styles), 0);
     lv_obj_align(subtitle_label, LV_ALIGN_TOP_MID, 0, HEADER_HEIGHT + 40);
 
     // Create 4 mode selection buttons (plain text, no icons)
@@ -230,7 +315,7 @@ lv_obj_t* create_start_screen(ui_footer_page_cb_t page_callback, lv_obj_t **foot
                        COLOR_BTN_CONFIG, btn_config_clicked, 370);
 
     // Create footer navigation bar
-    lv_obj_t *footer = ui_footer_create(screen, PAGE_START, page_callback);
+    lv_obj_t *footer = ui_footer_create(screen, PAGE_START, page_callback, styles);
 
     // Ensure footer is visible and in foreground
     if (footer != NULL) {
@@ -249,20 +334,157 @@ lv_obj_t* create_start_screen(ui_footer_page_cb_t page_callback, lv_obj_t **foot
 }
 
 /**
+ * Helper function to convert course degrees to cardinal direction
+ */
+static const char* course_to_cardinal(float course) {
+    if (course < 0 || course > 360) return "---";
+
+    const char *directions[] = {"N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
+                                 "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"};
+    int index = (int)((course + 11.25) / 22.5) % 16;
+    return directions[index];
+}
+
+/**
+ * Timer callback to update Position screen with live GPS data
+ */
+static void update_position_screen(lv_timer_t *timer) {
+    (void)timer;
+    static uint32_t update_count = 0;
+    update_count++;
+
+    // Only log every 10 updates (once per 10 seconds) to reduce spam
+    if (update_count % 10 == 0) {
+        ESP_LOGI(TAG, "Position update #%u", (unsigned int)update_count);
+    }
+
+    // Check if labels are valid
+    if (g_position_compass_label == NULL || g_position_gps_label == NULL) {
+        if (update_count == 1) {
+            ESP_LOGW(TAG, "Position labels are NULL!");
+        }
+        return;
+    }
+
+    // Get GPS data
+    gps_data_t gps_data;
+    esp_err_t ret = gps_manager_get_data(&gps_data);
+
+    // Only log on state changes
+    static bool last_valid = false;
+    bool current_valid = (ret == ESP_OK && gps_data.valid);
+    if (current_valid != last_valid) {
+        if (current_valid) {
+            ESP_LOGI(TAG, "GPS FIX: %.6f,%.6f sats=%d",
+                    gps_data.latitude, gps_data.longitude, gps_data.satellites_used);
+        } else {
+            ESP_LOGW(TAG, "GPS: No fix");
+        }
+        last_valid = current_valid;
+    }
+
+    // Format compass heading
+    char compass_text[128];
+    if (ret == ESP_OK && gps_data.valid && gps_data.course >= 0) {
+        snprintf(compass_text, sizeof(compass_text),
+                "    N\n  W + E\n    S\n\nHdg: %03.0f° (%s)",
+                gps_data.course, course_to_cardinal(gps_data.course));
+    } else {
+        snprintf(compass_text, sizeof(compass_text),
+                "    N\n  W + E\n    S\n\nHdg: --- (NO DATA)");
+    }
+
+    // Format GPS data
+    char gps_text[512];
+    if (ret == ESP_OK && gps_data.valid) {
+        // Determine hemisphere indicators
+        char lat_hem = (gps_data.latitude >= 0) ? 'N' : 'S';
+        char lon_hem = (gps_data.longitude >= 0) ? 'E' : 'W';
+
+        // Format GPS quality string
+        const char *fix_str = "UNKNOWN";
+        switch (gps_data.fix_quality) {
+            case GPS_FIX_INVALID: fix_str = "NO FIX"; break;
+            case GPS_FIX_GPS: fix_str = "GPS"; break;
+            case GPS_FIX_DGPS: fix_str = "DGPS"; break;
+            case GPS_FIX_PPS: fix_str = "PPS"; break;
+            case GPS_FIX_RTK: fix_str = "RTK"; break;
+            case GPS_FIX_RTK_FLOAT: fix_str = "RTK FLOAT"; break;
+            case GPS_FIX_DR: fix_str = "DEAD RECKONING"; break;
+            case GPS_FIX_MANUAL: fix_str = "MANUAL"; break;
+            case GPS_FIX_SIMULATION: fix_str = "SIMULATION"; break;
+        }
+
+        // Get source string
+        const char *source_str = gps_manager_source_to_string(gps_data.source);
+
+        snprintf(gps_text, sizeof(gps_text),
+                "GPS POSITION\n"
+                "Lat: %.6f° %c\n"
+                "Lon: %.6f° %c\n"
+                "Alt: %.1f m\n\n"
+                "VELOCITY\n"
+                "SOG: %.1f kts\n"
+                "COG: %03.0f°\n\n"
+                "QUALITY\n"
+                "Fix: %s\n"
+                "Sats: %d/%d\n"
+                "HDOP: %.1f\n"
+                "PDOP: %.1f\n\n"
+                "Source: %s\n"
+                "Update: %02d:%02d:%02d",
+                fabs(gps_data.latitude), lat_hem,
+                fabs(gps_data.longitude), lon_hem,
+                gps_data.altitude,
+                gps_data.speed_knots,
+                gps_data.course,
+                fix_str,
+                gps_data.satellites_used,
+                gps_data.satellites_visible,
+                gps_data.hdop,
+                gps_data.pdop,
+                source_str,
+                gps_data.hour, gps_data.minute, gps_data.second);
+    } else {
+        snprintf(gps_text, sizeof(gps_text),
+                "GPS POSITION\n"
+                "NO GPS FIX\n\n"
+                "Waiting for valid\n"
+                "GPS data from:\n"
+                "• N2K (PGN 129029)\n"
+                "• NMEA 0183\n"
+                "• External GPS\n"
+                "• GPS URL\n\n"
+                "Check GPS source\n"
+                "configuration in\n"
+                "CONFIG screen.");
+    }
+
+    // Update labels with LVGL lock
+    if (lvgl_lock(100)) {
+        lv_label_set_text(g_position_compass_label, compass_text);
+        lv_label_set_text(g_position_gps_label, gps_text);
+        lvgl_unlock();
+    }
+}
+
+/**
  * INFO SCREEN - Compass & GPS Details
  */
-lv_obj_t* create_info_screen(ui_footer_page_cb_t page_callback, lv_obj_t **footer_out) {
+lv_obj_t* create_info_screen(ui_footer_page_cb_t page_callback, lv_obj_t **footer_out, ui_styles_t* styles) {
+    g_screen_styles = styles;  // Store for callbacks
+
     lv_obj_t *screen = lv_obj_create(NULL);
-    lv_obj_set_style_bg_color(screen, lv_color_hex(THEME_SCREEN_BG), 0);
+    lv_obj_add_style(screen, ui_styles_get_screen_bg(styles), 0);
 
     // Create header bar with satellite icon
-    lv_obj_t *header = ui_header_create(screen);
+    lv_obj_t *header = ui_header_create(screen, styles);
     ui_header_set_gps_status(header, false);  // Default to GPS not found
 
     // Title (positioned below header)
     lv_obj_t *title = lv_label_create(screen);
     lv_label_set_text(title, "POSITION & NAVIGATION");
-    THEME_STYLE_TEXT(title, THEME_TITLE_COLOR, FONT_TITLE);
+    lv_obj_add_style(title, ui_styles_get_title(styles), 0);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, HEADER_HEIGHT + SPACING_MARGIN_SMALL);
 
     // Left side - Compass Rose placeholder
@@ -272,7 +494,7 @@ lv_obj_t* create_info_screen(ui_footer_page_cb_t page_callback, lv_obj_t **foote
     THEME_STYLE_PANEL(compass_box, THEME_PANEL_BG);
 
     lv_obj_t *compass_label = lv_label_create(compass_box);
-    lv_label_set_text(compass_label, "    N\n  W + E\n    S\n\nHdg: 045 deg (NE)");
+    lv_label_set_text(compass_label, "    N\n  W + E\n    S\n\nHdg: --- (LOADING)");
     THEME_STYLE_TEXT(compass_label, COLOR_TEXT_PRIMARY, FONT_BODY_NORMAL);
     lv_obj_center(compass_label);
 
@@ -283,24 +505,23 @@ lv_obj_t* create_info_screen(ui_footer_page_cb_t page_callback, lv_obj_t **foote
     THEME_STYLE_PANEL(gps_container, THEME_PANEL_BG);
 
     lv_obj_t *gps_label = lv_label_create(gps_container);
-    lv_label_set_text(gps_label,
-        "GPS POSITION\n"
-        "Lat: 30.031355 deg N\n"
-        "Lon: 90.034512 deg W\n"
-        "Alt: 5.2 m\n\n"
-        "VELOCITY\n"
-        "SOG: 0.2 kts\n"
-        "COG: 045 deg\n\n"
-        "QUALITY\n"
-        "Sats: 8\n"
-        "HDOP: 1.2\n"
-        "PDOP: 2.1\n\n"
-        "Last Update: 12:34:56");
+    lv_label_set_text(gps_label, "GPS POSITION\n\nLOADING...\n\nWaiting for GPS data");
     THEME_STYLE_TEXT(gps_label, COLOR_TEXT_PRIMARY, FONT_BODY_NORMAL);
     lv_obj_align(gps_label, LV_ALIGN_TOP_LEFT, 10, 10);
 
+    // Store global references for live updates
+    g_position_compass_label = compass_label;
+    g_position_gps_label = gps_label;
+
+    // Create timer to update GPS data every second (1000ms)
+    if (g_position_update_timer != NULL) {
+        lv_timer_del(g_position_update_timer);  // Delete old timer if exists
+    }
+    g_position_update_timer = lv_timer_create(update_position_screen, 1000, NULL);
+    lv_timer_ready(g_position_update_timer);  // Trigger immediate first update
+
     // Create footer
-    lv_obj_t *footer = ui_footer_create(screen, PAGE_INFO, page_callback);
+    lv_obj_t *footer = ui_footer_create(screen, PAGE_INFO, page_callback, styles);
     if (footer != NULL) {
         ui_footer_show(footer);
         lv_obj_move_foreground(footer);
@@ -309,25 +530,27 @@ lv_obj_t* create_info_screen(ui_footer_page_cb_t page_callback, lv_obj_t **foote
         *footer_out = footer;
     }
 
-    ESP_LOGI(TAG, "Created INFO screen with GPS and compass data");
+    ESP_LOGI(TAG, "Created INFO screen with live GPS data (updates every 1 second)");
     return screen;
 }
 
 /**
  * PGN SCREEN - NMEA 2000 Monitor
  */
-lv_obj_t* create_pgn_screen(ui_footer_page_cb_t page_callback, lv_obj_t **footer_out) {
+lv_obj_t* create_pgn_screen(ui_footer_page_cb_t page_callback, lv_obj_t **footer_out, ui_styles_t* styles) {
+    g_screen_styles = styles;  // Store for callbacks
+
     lv_obj_t *screen = lv_obj_create(NULL);
-    lv_obj_set_style_bg_color(screen, lv_color_hex(THEME_SCREEN_BG), 0);
+    lv_obj_add_style(screen, ui_styles_get_screen_bg(styles), 0);
 
     // Create header bar with satellite icon
-    lv_obj_t *header = ui_header_create(screen);
+    lv_obj_t *header = ui_header_create(screen, styles);
     ui_header_set_gps_status(header, false);  // Default to GPS not found
 
     // Title (positioned below header)
     lv_obj_t *title = lv_label_create(screen);
     lv_label_set_text(title, "N2K PGN MONITOR");
-    THEME_STYLE_TEXT(title, THEME_TITLE_COLOR, FONT_TITLE);
+    lv_obj_add_style(title, ui_styles_get_title(styles), 0);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, HEADER_HEIGHT + SPACING_MARGIN_SMALL);
 
     // Message list container
@@ -357,7 +580,7 @@ lv_obj_t* create_pgn_screen(ui_footer_page_cb_t page_callback, lv_obj_t **footer
     lv_obj_align(msg_label, LV_ALIGN_TOP_LEFT, 10, 10);
 
     // Create footer
-    lv_obj_t *footer = ui_footer_create(screen, PAGE_PGN, page_callback);
+    lv_obj_t *footer = ui_footer_create(screen, PAGE_PGN, page_callback, styles);
     if (footer != NULL) {
         ui_footer_show(footer);
         lv_obj_move_foreground(footer);
@@ -397,6 +620,9 @@ static void config_datetime_clicked(lv_event_t *e) {
 // GPS source selection state
 static int g_gps_source_selected = 0;  // 0=AUTO, 1=N2K, 2=0183, 3=EXTERNAL, 4=URL
 static int g_gps_source_temp = 0;       // Temporary selection in modal
+static char g_gps_url[128] = "http://192.168.1.100:10110/gps";  // Default GPS URL (N2K gateway port)
+static lv_obj_t *g_gps_url_textarea = NULL;
+static lv_obj_t *g_gps_url_keyboard = NULL;
 
 static void gps_source_modal_close(lv_event_t *e) {
     lv_obj_t *modal = (lv_obj_t *)lv_event_get_user_data(e);
@@ -406,8 +632,89 @@ static void gps_source_modal_close(lv_event_t *e) {
 static void gps_source_save_clicked(lv_event_t *e) {
     // Save the temporary selection to actual selection
     g_gps_source_selected = g_gps_source_temp;
-    ESP_LOGI(TAG, "GPS Source saved: %d", g_gps_source_selected);
+    ESP_LOGI(TAG, "=== GPS SOURCE SAVE START ===");
+    ESP_LOGI(TAG, "GPS Source selected: %d", g_gps_source_selected);
+    ESP_LOGI(TAG, "Current GPS URL: '%s' (len=%d)", g_gps_url, strlen(g_gps_url));
+
+    // Save to NVS
+    nvs_handle_t nvs_handle;
+    bool save_success = false;
+    esp_err_t nvs_open_ret = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &nvs_handle);
+    ESP_LOGI(TAG, "NVS open: %s", esp_err_to_name(nvs_open_ret));
+
+    if (nvs_open_ret == ESP_OK) {
+        esp_err_t set_u8_ret = nvs_set_u8(nvs_handle, "gps_source", (uint8_t)g_gps_source_selected);
+        ESP_LOGI(TAG, "NVS set_u8 'gps_source'=%d: %s", g_gps_source_selected, esp_err_to_name(set_u8_ret));
+
+        if (g_gps_source_selected == 4) {  // URL source
+            ESP_LOGI(TAG, "Saving GPS URL to NVS: '%s'", g_gps_url);
+            esp_err_t set_str_ret = nvs_set_str(nvs_handle, "gps_url", g_gps_url);
+            ESP_LOGI(TAG, "NVS set_str 'gps_url': %s", esp_err_to_name(set_str_ret));
+        }
+
+        esp_err_t commit_ret = nvs_commit(nvs_handle);
+        ESP_LOGI(TAG, "NVS commit: %s", esp_err_to_name(commit_ret));
+
+        nvs_close(nvs_handle);
+        ESP_LOGI(TAG, "NVS closed");
+
+        save_success = true;
+        ESP_LOGI(TAG, "=== GPS SOURCE SAVE SUCCESS ===");
+    } else {
+        ESP_LOGE(TAG, "=== GPS SOURCE SAVE FAILED (NVS open error) ===");
+    }
+
     gps_source_modal_close(e);
+
+    // Show status feedback
+    if (save_success) {
+        char status_msg[512];  // Large buffer to avoid truncation warnings
+        const char *source_name = "";
+        switch (g_gps_source_selected) {
+            case 0: source_name = "AUTO (N2K→0183→External→URL)"; break;
+            case 1: source_name = "NMEA 2000 (N2K)"; break;
+            case 2: source_name = "NMEA 0183 (RS485)"; break;
+            case 3: source_name = "External GPS (I2C)"; break;
+            case 4:
+                source_name = "GPS URL";
+                snprintf(status_msg, sizeof(status_msg),
+                        "GPS URL Saved\n\n"
+                        "Source: %s\n"
+                        "URL: %s\n\n"
+                        "The GPS manager will\n"
+                        "connect to this URL and\n"
+                        "parse NMEA data.\n\n"
+                        "Check Position screen\n"
+                        "for live GPS data.",
+                        source_name, g_gps_url);
+                break;
+        }
+
+        if (g_gps_source_selected != 4) {
+            snprintf(status_msg, sizeof(status_msg),
+                    "GPS Source Saved\n\n"
+                    "Active Source:\n%s\n\n"
+                    "Check Position screen\n"
+                    "for live GPS data.",
+                    source_name);
+        }
+
+        lv_obj_t *mbox = lv_msgbox_create(lv_scr_act(), "GPS Source Saved",
+                                          status_msg, NULL, true);
+        lv_obj_center(mbox);
+        lv_obj_set_style_text_align(mbox, LV_TEXT_ALIGN_LEFT, 0);
+
+        // Update GPS manager with new source
+        gps_manager_set_source((gps_source_t)g_gps_source_selected);
+
+    } else {
+        lv_obj_t *mbox = lv_msgbox_create(lv_scr_act(), "Save Failed",
+                                          "Failed to save GPS\n"
+                                          "source to NVS storage.\n\n"
+                                          "Please try again.",
+                                          NULL, true);
+        lv_obj_center(mbox);
+    }
 }
 
 static void gps_source_auto_clicked(lv_event_t *e) {
@@ -430,9 +737,49 @@ static void gps_source_external_clicked(lv_event_t *e) {
     ESP_LOGI(TAG, "GPS Source: EXTERNAL selected");
 }
 
+// URL keyboard callbacks
+static void gps_url_keyboard_ready(lv_event_t *e) {
+    lv_obj_t *textarea = lv_event_get_user_data(e);
+
+    // Get the URL from textarea
+    const char *url = lv_textarea_get_text(textarea);
+    if (url && strlen(url) > 0) {
+        strncpy(g_gps_url, url, sizeof(g_gps_url) - 1);
+        g_gps_url[sizeof(g_gps_url) - 1] = '\0';
+        ESP_LOGI(TAG, "GPS URL entered: %s", g_gps_url);
+    }
+
+    // Close keyboard and textarea
+    if (g_gps_url_keyboard) {
+        lv_obj_del(g_gps_url_keyboard);
+        g_gps_url_keyboard = NULL;
+    }
+    if (g_gps_url_textarea) {
+        lv_obj_del(g_gps_url_textarea);
+        g_gps_url_textarea = NULL;
+    }
+}
+
 static void gps_source_url_clicked(lv_event_t *e) {
     g_gps_source_temp = 4;
-    ESP_LOGI(TAG, "GPS Source: URL selected");
+    ESP_LOGI(TAG, "GPS Source: URL selected - showing keyboard");
+
+    // Create text area for URL input
+    g_gps_url_textarea = lv_textarea_create(lv_scr_act());
+    lv_obj_set_size(g_gps_url_textarea, 700, 60);
+    lv_obj_align(g_gps_url_textarea, LV_ALIGN_TOP_MID, 0, 100);
+    lv_textarea_set_text(g_gps_url_textarea, g_gps_url);
+    lv_textarea_set_placeholder_text(g_gps_url_textarea, "Enter GPS URL (e.g., http://192.168.1.100:10110/gps)");
+    lv_textarea_set_one_line(g_gps_url_textarea, true);
+
+    // Create keyboard
+    g_gps_url_keyboard = lv_keyboard_create(lv_scr_act());
+    lv_keyboard_set_textarea(g_gps_url_keyboard, g_gps_url_textarea);
+    lv_obj_set_size(g_gps_url_keyboard, 800, 240);
+    lv_obj_align(g_gps_url_keyboard, LV_ALIGN_BOTTOM_MID, 0, 0);
+
+    // Register keyboard ready event
+    lv_obj_add_event_cb(g_gps_url_keyboard, gps_url_keyboard_ready, LV_EVENT_READY, g_gps_url_textarea);
 }
 
 static void config_gps_source_clicked(lv_event_t *e) {
@@ -443,16 +790,16 @@ static void config_gps_source_clicked(lv_event_t *e) {
 
     // Create modal screen overlay (increased height for Save/Cancel buttons)
     lv_obj_t *modal = lv_obj_create(lv_scr_act());
-    lv_obj_set_size(modal, 500, 440);
+    lv_obj_set_size(modal, 500, 480);  // Increased from 440 to 480 for better spacing
     lv_obj_center(modal);
-    lv_obj_set_style_bg_color(modal, lv_color_hex(THEME_PANEL_BG_DARK), 0);
+    lv_obj_add_style(modal, ui_styles_get_panel(styles), 0);
     lv_obj_set_style_border_color(modal, lv_color_hex(0x00AA00), 0);
     lv_obj_set_style_border_width(modal, 2, 0);
 
     // Title
     lv_obj_t *title = lv_label_create(modal);
     lv_label_set_text(title, "GPS Source");
-    THEME_STYLE_TEXT(title, THEME_TITLE_COLOR, FONT_TITLE);
+    lv_obj_add_style(title, ui_styles_get_title(styles), 0);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 10);
 
     // Description
@@ -491,12 +838,12 @@ static void config_gps_source_clicked(lv_event_t *e) {
         lv_obj_center(label);
     }
 
-    // Save and Cancel buttons (side by side at bottom)
-    // Save button (left)
+    // Save and Cancel buttons (side by side at bottom with more spacing)
+    // Save button (bottom left)
     lv_obj_t *save_btn = lv_btn_create(modal);
     lv_obj_set_size(save_btn, 150, 45);
-    lv_obj_align(save_btn, LV_ALIGN_BOTTOM_LEFT, 50, -10);
-    lv_obj_set_style_bg_color(save_btn, lv_color_hex(0x00AA00), 0);  // Green
+    lv_obj_align(save_btn, LV_ALIGN_BOTTOM_LEFT, 40, -20);  // Increased bottom margin from -10 to -20
+    apply_3d_button_style(save_btn, 0x00AA00);  // Green with 3D styling
     lv_obj_add_event_cb(save_btn, gps_source_save_clicked, LV_EVENT_CLICKED, modal);
 
     lv_obj_t *save_label = lv_label_create(save_btn);
@@ -504,11 +851,11 @@ static void config_gps_source_clicked(lv_event_t *e) {
     THEME_STYLE_TEXT(save_label, COLOR_TEXT_PRIMARY, FONT_BUTTON_SMALL);
     lv_obj_center(save_label);
 
-    // Cancel button (right)
+    // Cancel button (bottom right)
     lv_obj_t *cancel_btn = lv_btn_create(modal);
     lv_obj_set_size(cancel_btn, 150, 45);
-    lv_obj_align(cancel_btn, LV_ALIGN_BOTTOM_RIGHT, -50, -10);
-    THEME_STYLE_BUTTON(cancel_btn, THEME_BTN_CANCEL);
+    lv_obj_align(cancel_btn, LV_ALIGN_BOTTOM_RIGHT, -40, -20);  // Increased bottom margin from -10 to -20
+    apply_3d_button_style(cancel_btn, THEME_BTN_CANCEL);  // 3D styling
     lv_obj_add_event_cb(cancel_btn, gps_source_modal_close, LV_EVENT_CLICKED, modal);
 
     lv_obj_t *cancel_label = lv_label_create(cancel_btn);
@@ -604,14 +951,14 @@ static void config_btn7_clicked(lv_event_t *e) {
     lv_obj_t *modal = lv_obj_create(lv_scr_act());
     lv_obj_set_size(modal, 600, 450);
     lv_obj_center(modal);
-    lv_obj_set_style_bg_color(modal, lv_color_hex(THEME_PANEL_BG_DARK), 0);
+    lv_obj_add_style(modal, ui_styles_get_panel(styles), 0);
     lv_obj_set_style_border_color(modal, lv_color_hex(0x00AA00), 0);
     lv_obj_set_style_border_width(modal, 2, 0);
 
     // Title
     lv_obj_t *title = lv_label_create(modal);
     lv_label_set_text(title, "PGN Selection");
-    THEME_STYLE_TEXT(title, THEME_TITLE_COLOR, FONT_TITLE);
+    lv_obj_add_style(title, ui_styles_get_title(styles), 0);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 10);
 
     // GPS Section
@@ -727,18 +1074,20 @@ static void config_relay_clicked(lv_event_t *e) {
 /**
  * CONFIG SCREEN - Configuration Settings (9-button grid layout)
  */
-lv_obj_t* create_config_screen(ui_footer_page_cb_t page_callback, lv_obj_t **footer_out) {
+lv_obj_t* create_config_screen(ui_footer_page_cb_t page_callback, lv_obj_t **footer_out, ui_styles_t* styles) {
+    g_screen_styles = styles;  // Store for callbacks
+
     lv_obj_t *screen = lv_obj_create(NULL);
-    lv_obj_set_style_bg_color(screen, lv_color_hex(THEME_SCREEN_BG), 0);
+    lv_obj_add_style(screen, ui_styles_get_screen_bg(styles), 0);
 
     // Create header bar
-    lv_obj_t *header = ui_header_create(screen);
+    lv_obj_t *header = ui_header_create(screen, styles);
     ui_header_set_gps_status(header, false);
 
     // Title (positioned below header)
     lv_obj_t *title = lv_label_create(screen);
     lv_label_set_text(title, "CONFIGURATION");
-    THEME_STYLE_TEXT(title, THEME_TITLE_COLOR, FONT_TITLE);
+    lv_obj_add_style(title, ui_styles_get_title(styles), 0);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, HEADER_HEIGHT + SPACING_MARGIN_SMALL);
 
     // Define 9 config buttons (placeholders with numbers for now)
@@ -751,7 +1100,7 @@ lv_obj_t* create_config_screen(ui_footer_page_cb_t page_callback, lv_obj_t **foo
         {"Date/Time", config_datetime_clicked},
         {"GPS", config_gps_source_clicked},
         {"LED", config_led_clicked},
-        {"4", config_btn4_clicked},
+        {"WiFi/BT", tools_wifi_bt_clicked},
         {"Mute", config_mute_clicked},
         {"Buzzer", config_buzzer_clicked},
         {"PGN", config_btn7_clicked},
@@ -779,7 +1128,7 @@ lv_obj_t* create_config_screen(ui_footer_page_cb_t page_callback, lv_obj_t **foo
     if (spacing_x < 20) spacing_x = 20;
     if (spacing_y < 20) spacing_y = 20;
 
-    // Starting position (centered)
+    // Starting position (centered on screen)
     int grid_width = total_button_width + (cols - 1) * spacing_x;
     int grid_height = total_button_height + (rows - 1) * spacing_y;
     int start_x = (screen_width - grid_width) / 2;
@@ -788,7 +1137,7 @@ lv_obj_t* create_config_screen(ui_footer_page_cb_t page_callback, lv_obj_t **foo
     ESP_LOGI(TAG, "CONFIG grid: %d buttons in %dx%d layout, spacing: %dx%d",
              button_count, rows, cols, spacing_x, spacing_y);
 
-    // Create buttons in 3x3 grid
+    // Create buttons in 3x3 grid directly on screen
     for (int i = 0; i < button_count; i++) {
         int row = i / cols;
         int col = i % cols;
@@ -817,7 +1166,7 @@ lv_obj_t* create_config_screen(ui_footer_page_cb_t page_callback, lv_obj_t **foo
     }
 
     // Create footer
-    lv_obj_t *footer = ui_footer_create(screen, PAGE_CONFIG, page_callback);
+    lv_obj_t *footer = ui_footer_create(screen, PAGE_CONFIG, page_callback, styles);
     if (footer != NULL) {
         ui_footer_show(footer);
         lv_obj_move_foreground(footer);
@@ -840,25 +1189,27 @@ static void update_start_clicked(lv_event_t *e) {
 /**
  * UPDATE SCREEN - Firmware Update
  */
-lv_obj_t* create_update_screen(ui_footer_page_cb_t page_callback, lv_obj_t **footer_out) {
+lv_obj_t* create_update_screen(ui_footer_page_cb_t page_callback, lv_obj_t **footer_out, ui_styles_t* styles) {
+    g_screen_styles = styles;  // Store for callbacks
+
     lv_obj_t *screen = lv_obj_create(NULL);
-    lv_obj_set_style_bg_color(screen, lv_color_hex(THEME_SCREEN_BG), 0);
+    lv_obj_add_style(screen, ui_styles_get_screen_bg(styles), 0);
 
     // Create header bar with satellite icon
-    lv_obj_t *header = ui_header_create(screen);
+    lv_obj_t *header = ui_header_create(screen, styles);
     ui_header_set_gps_status(header, false);  // Default to GPS not found
 
     // Title (positioned below header)
     lv_obj_t *title = lv_label_create(screen);
     lv_label_set_text(title, "FIRMWARE UPDATE");
-    THEME_STYLE_TEXT(title, THEME_TITLE_COLOR, FONT_TITLE);
+    lv_obj_add_style(title, ui_styles_get_title(styles), 0);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, HEADER_HEIGHT + SPACING_MARGIN_SMALL);
 
     // Update panel with red warning border
     lv_obj_t *update_panel = lv_obj_create(screen);
     lv_obj_set_size(update_panel, 600, 280);
     lv_obj_align(update_panel, LV_ALIGN_CENTER, 0, -20);
-    lv_obj_set_style_bg_color(update_panel, lv_color_hex(THEME_PANEL_BG_DARK), 0);
+    lv_obj_add_style(update_panel, ui_styles_get_panel(styles), 0);
     lv_obj_set_style_border_color(update_panel, lv_color_hex(COLOR_BORDER_WARNING), 0);
     lv_obj_set_style_border_width(update_panel, BORDER_WIDTH_THICK, 0);
     lv_obj_set_style_radius(update_panel, RADIUS_SMALL, 0);
@@ -891,7 +1242,7 @@ lv_obj_t* create_update_screen(ui_footer_page_cb_t page_callback, lv_obj_t **foo
     lv_obj_center(update_btn_label);
 
     // Create footer
-    lv_obj_t *footer = ui_footer_create(screen, PAGE_UPDATE, page_callback);
+    lv_obj_t *footer = ui_footer_create(screen, PAGE_UPDATE, page_callback, styles);
     if (footer != NULL) {
         ui_footer_show(footer);
         lv_obj_move_foreground(footer);
@@ -1003,16 +1354,16 @@ static void tfcard_back_clicked(lv_event_t *e) {
  */
 static lv_obj_t* create_tfcard_screen(lv_obj_t *tools_screen_ref) {
     lv_obj_t *screen = lv_obj_create(NULL);
-    lv_obj_set_style_bg_color(screen, lv_color_hex(THEME_SCREEN_BG), 0);
+    lv_obj_add_style(screen, ui_styles_get_screen_bg(g_screen_styles), 0);
 
     // Create header
-    lv_obj_t *header = ui_header_create(screen);
+    lv_obj_t *header = ui_header_create(screen, g_screen_styles);
     ui_header_set_gps_status(header, false);
 
     // Title
     lv_obj_t *title = lv_label_create(screen);
     lv_label_set_text(title, "TF CARD TOOLS");
-    THEME_STYLE_TEXT(title, THEME_TITLE_COLOR, FONT_TITLE);
+    lv_obj_add_style(title, ui_styles_get_title(g_screen_styles), 0);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, HEADER_HEIGHT + SPACING_MARGIN_SMALL);
 
     // Format button
@@ -1068,16 +1419,16 @@ static void browser_back_clicked(lv_event_t *e) {
 
 static lv_obj_t* create_file_browser_screen(lv_obj_t *tools_screen_ref) {
     lv_obj_t *screen = lv_obj_create(NULL);
-    lv_obj_set_style_bg_color(screen, lv_color_hex(THEME_SCREEN_BG), 0);
+    lv_obj_add_style(screen, ui_styles_get_screen_bg(g_screen_styles), 0);
 
     // Create header
-    lv_obj_t *header = ui_header_create(screen);
+    lv_obj_t *header = ui_header_create(screen, g_screen_styles);
     ui_header_set_gps_status(header, false);
 
     // Title
     lv_obj_t *title = lv_label_create(screen);
     lv_label_set_text(title, "TF CARD BROWSER");
-    THEME_STYLE_TEXT(title, THEME_TITLE_COLOR, FONT_TITLE);
+    lv_obj_add_style(title, ui_styles_get_title(g_screen_styles), 0);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, HEADER_HEIGHT + SPACING_MARGIN_SMALL);
 
     // Get SD card space info
@@ -1102,7 +1453,7 @@ static lv_obj_t* create_file_browser_screen(lv_obj_t *tools_screen_ref) {
     lv_obj_t *list = lv_list_create(screen);
     lv_obj_set_size(list, 740, 260);
     lv_obj_align(list, LV_ALIGN_TOP_MID, 0, HEADER_HEIGHT + 80);
-    lv_obj_set_style_bg_color(list, lv_color_hex(THEME_PANEL_BG), 0);
+    lv_obj_add_style(list, ui_styles_get_panel(g_screen_styles), 0);
 
     // List files from SD card (limited to 10 to avoid stack overflow)
     sd_file_info_t files[10];
@@ -1245,15 +1596,18 @@ static void tools_datetime_clicked(lv_event_t *e) {
 }
 
 /**
- * Create a tool button for TOOLS screen
+ * Create a tool button for TOOLS and CONFIG screens
  */
 static lv_obj_t* create_tool_button(lv_obj_t *parent, const char *label, int x, int y,
                                     lv_event_cb_t callback) {
     lv_obj_t *btn = lv_btn_create(parent);
     lv_obj_set_size(btn, BUTTON_WIDTH_SMALL, 70);
     lv_obj_set_pos(btn, x, y);
-    THEME_STYLE_BUTTON(btn, THEME_BTN_PRIMARY);
+    apply_3d_button_style(btn, THEME_BTN_PRIMARY);
     lv_obj_add_event_cb(btn, callback, LV_EVENT_CLICKED, NULL);
+
+    // Enable event bubbling so gestures work even when touching buttons
+    lv_obj_add_flag(btn, LV_OBJ_FLAG_EVENT_BUBBLE);
 
     lv_obj_t *btn_label = lv_label_create(btn);
     lv_label_set_text(btn_label, label);
@@ -1275,16 +1629,16 @@ static void sysinfo_back_clicked(lv_event_t *e) {
 
 static lv_obj_t* create_sysinfo_screen(lv_obj_t *tools_screen_ref) {
     lv_obj_t *screen = lv_obj_create(NULL);
-    lv_obj_set_style_bg_color(screen, lv_color_hex(THEME_SCREEN_BG), 0);
+    lv_obj_add_style(screen, ui_styles_get_screen_bg(g_screen_styles), 0);
 
     // Create header
-    lv_obj_t *header = ui_header_create(screen);
+    lv_obj_t *header = ui_header_create(screen, g_screen_styles);
     ui_header_set_gps_status(header, false);
 
     // Title
     lv_obj_t *title = lv_label_create(screen);
     lv_label_set_text(title, "SYSTEM INFO");
-    THEME_STYLE_TEXT(title, THEME_TITLE_COLOR, FONT_TITLE);
+    lv_obj_add_style(title, ui_styles_get_title(g_screen_styles), 0);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, HEADER_HEIGHT + SPACING_MARGIN_SMALL);
 
     // Get system information
@@ -1352,16 +1706,16 @@ static void test_hw_back_clicked(lv_event_t *e) {
 
 static lv_obj_t* create_test_hardware_screen(lv_obj_t *tools_screen_ref) {
     lv_obj_t *screen = lv_obj_create(NULL);
-    lv_obj_set_style_bg_color(screen, lv_color_hex(THEME_SCREEN_BG), 0);
+    lv_obj_add_style(screen, ui_styles_get_screen_bg(g_screen_styles), 0);
 
     // Create header
-    lv_obj_t *header = ui_header_create(screen);
+    lv_obj_t *header = ui_header_create(screen, g_screen_styles);
     ui_header_set_gps_status(header, false);
 
     // Title
     lv_obj_t *title = lv_label_create(screen);
     lv_label_set_text(title, "TEST HARDWARE");
-    THEME_STYLE_TEXT(title, THEME_TITLE_COLOR, FONT_TITLE);
+    lv_obj_add_style(title, ui_styles_get_title(g_screen_styles), 0);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, HEADER_HEIGHT + SPACING_MARGIN_SMALL);
 
     // Info label
@@ -1425,16 +1779,16 @@ static void logs_menu_back_clicked(lv_event_t *e) {
 
 static lv_obj_t* create_logs_menu_screen(lv_obj_t *tools_screen_ref) {
     lv_obj_t *screen = lv_obj_create(NULL);
-    lv_obj_set_style_bg_color(screen, lv_color_hex(THEME_SCREEN_BG), 0);
+    lv_obj_add_style(screen, ui_styles_get_screen_bg(g_screen_styles), 0);
 
     // Create header
-    lv_obj_t *header = ui_header_create(screen);
+    lv_obj_t *header = ui_header_create(screen, g_screen_styles);
     ui_header_set_gps_status(header, false);
 
     // Title
     lv_obj_t *title = lv_label_create(screen);
     lv_label_set_text(title, "LOGS");
-    THEME_STYLE_TEXT(title, THEME_TITLE_COLOR, FONT_TITLE);
+    lv_obj_add_style(title, ui_styles_get_title(g_screen_styles), 0);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, HEADER_HEIGHT + SPACING_MARGIN_SMALL);
 
     // Create three large buttons centered
@@ -1506,16 +1860,16 @@ static void view_logs_back_clicked(lv_event_t *e) {
 
 static lv_obj_t* create_view_logs_screen(lv_obj_t *logs_menu_ref) {
     lv_obj_t *screen = lv_obj_create(NULL);
-    lv_obj_set_style_bg_color(screen, lv_color_hex(THEME_SCREEN_BG), 0);
+    lv_obj_add_style(screen, ui_styles_get_screen_bg(g_screen_styles), 0);
 
     // Create header
-    lv_obj_t *header = ui_header_create(screen);
+    lv_obj_t *header = ui_header_create(screen, g_screen_styles);
     ui_header_set_gps_status(header, false);
 
     // Title
     lv_obj_t *title = lv_label_create(screen);
     lv_label_set_text(title, "VIEW LOGS");
-    THEME_STYLE_TEXT(title, THEME_TITLE_COLOR, FONT_TITLE);
+    lv_obj_add_style(title, ui_styles_get_title(g_screen_styles), 0);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, HEADER_HEIGHT + SPACING_MARGIN_SMALL);
 
     // Info label
@@ -1566,16 +1920,16 @@ static void clear_logs_confirm_clicked(lv_event_t *e) {
 
 static lv_obj_t* create_clear_logs_screen(lv_obj_t *logs_menu_ref) {
     lv_obj_t *screen = lv_obj_create(NULL);
-    lv_obj_set_style_bg_color(screen, lv_color_hex(THEME_SCREEN_BG), 0);
+    lv_obj_add_style(screen, ui_styles_get_screen_bg(g_screen_styles), 0);
 
     // Create header
-    lv_obj_t *header = ui_header_create(screen);
+    lv_obj_t *header = ui_header_create(screen, g_screen_styles);
     ui_header_set_gps_status(header, false);
 
     // Title
     lv_obj_t *title = lv_label_create(screen);
     lv_label_set_text(title, "CLEAR LOGS");
-    THEME_STYLE_TEXT(title, THEME_TITLE_COLOR, FONT_TITLE);
+    lv_obj_add_style(title, ui_styles_get_title(g_screen_styles), 0);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, HEADER_HEIGHT + SPACING_MARGIN_SMALL);
 
     // Warning message
@@ -1638,16 +1992,16 @@ static void log_level_button_clicked(lv_event_t *e) {
 
 static lv_obj_t* create_set_log_level_screen(lv_obj_t *logs_menu_ref) {
     lv_obj_t *screen = lv_obj_create(NULL);
-    lv_obj_set_style_bg_color(screen, lv_color_hex(THEME_SCREEN_BG), 0);
+    lv_obj_add_style(screen, ui_styles_get_screen_bg(g_screen_styles), 0);
 
     // Create header
-    lv_obj_t *header = ui_header_create(screen);
+    lv_obj_t *header = ui_header_create(screen, g_screen_styles);
     ui_header_set_gps_status(header, false);
 
     // Title
     lv_obj_t *title = lv_label_create(screen);
     lv_label_set_text(title, "SET LOG LEVEL");
-    THEME_STYLE_TEXT(title, THEME_TITLE_COLOR, FONT_TITLE);
+    lv_obj_add_style(title, ui_styles_get_title(g_screen_styles), 0);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, HEADER_HEIGHT + SPACING_MARGIN_SMALL);
 
     // Current level display
@@ -1745,16 +2099,16 @@ static void clear_gps_confirm_clicked(lv_event_t *e) {
 
 static lv_obj_t* create_clear_gps_screen(lv_obj_t *tools_screen_ref) {
     lv_obj_t *screen = lv_obj_create(NULL);
-    lv_obj_set_style_bg_color(screen, lv_color_hex(THEME_SCREEN_BG), 0);
+    lv_obj_add_style(screen, ui_styles_get_screen_bg(g_screen_styles), 0);
 
     // Create header
-    lv_obj_t *header = ui_header_create(screen);
+    lv_obj_t *header = ui_header_create(screen, g_screen_styles);
     ui_header_set_gps_status(header, false);
 
     // Title
     lv_obj_t *title = lv_label_create(screen);
     lv_label_set_text(title, "CLEAR GPS TRACK");
-    THEME_STYLE_TEXT(title, THEME_TITLE_COLOR, FONT_TITLE);
+    lv_obj_add_style(title, ui_styles_get_title(g_screen_styles), 0);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, HEADER_HEIGHT + SPACING_MARGIN_SMALL);
 
     // Warning label
@@ -1827,16 +2181,16 @@ static void bluetooth_menu_clicked(lv_event_t *e) {
 // WiFi/Bluetooth Config Menu Screen
 static lv_obj_t* create_wifi_bluetooth_screen(lv_obj_t *tools_screen_ref) {
     lv_obj_t *screen = lv_obj_create(NULL);
-    lv_obj_set_style_bg_color(screen, lv_color_hex(THEME_SCREEN_BG), 0);
+    lv_obj_add_style(screen, ui_styles_get_screen_bg(g_screen_styles), 0);
 
     // Create header
-    lv_obj_t *header = ui_header_create(screen);
+    lv_obj_t *header = ui_header_create(screen, g_screen_styles);
     ui_header_set_gps_status(header, false);
 
     // Title
     lv_obj_t *title = lv_label_create(screen);
     lv_label_set_text(title, "WIFI / BLUETOOTH");
-    THEME_STYLE_TEXT(title, THEME_TITLE_COLOR, FONT_TITLE);
+    lv_obj_add_style(title, ui_styles_get_title(g_screen_styles), 0);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, HEADER_HEIGHT + SPACING_MARGIN_SMALL);
 
     // WiFi button
@@ -2148,6 +2502,9 @@ static void wifi_scan_clicked(lv_event_t *e) {
         "Scanning for WiFi networks...\nPlease wait.", NULL, false);
     lv_obj_center(mbox);
 
+    // Force LVGL to render the dialog immediately
+    lv_refr_now(NULL);
+
     // Update status immediately
     if (wifi_status_label) {
         lv_label_set_text(wifi_status_label, "Scanning networks...");
@@ -2162,13 +2519,14 @@ static void wifi_scan_clicked(lv_event_t *e) {
     }
 
     ESP_LOGI(TAG, "Starting WiFi scan...");
+    // wifi_manager_scan_start() is blocking and waits for scan to complete
     esp_err_t ret = wifi_manager_scan_start();
 
-    if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "WiFi scan start failed: %s (0x%x)", esp_err_to_name(ret), ret);
+    // Scan is now complete (or failed), close the scanning dialog
+    lv_obj_del(mbox);
 
-        // Close scanning popup
-        lv_obj_del(mbox);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "WiFi scan failed: %s (0x%x)", esp_err_to_name(ret), ret);
 
         // Show error popup
         lv_obj_t *error_mbox = lv_msgbox_create(lv_scr_act(), "Scan Failed",
@@ -2189,13 +2547,7 @@ static void wifi_scan_clicked(lv_event_t *e) {
         return;
     }
 
-    ESP_LOGI(TAG, "WiFi scan started, waiting for results...");
-
-    // Wait for scan to complete (blocking - this is a limitation we'll improve later)
-    vTaskDelay(pdMS_TO_TICKS(3000));
-
-    // Close scanning popup
-    lv_obj_del(mbox);
+    ESP_LOGI(TAG, "WiFi scan completed successfully");
 
     // Get scan results
     wifi_ap_record_t ap_list[20];
@@ -2401,16 +2753,21 @@ static void wifi_disconnect_clicked(lv_event_t *e) {
 #endif
 }
 
+// Duplicate functions removed - using global button_3d_event_handler and apply_3d_button_style
+
 static void wifi_test_clicked(lv_event_t *e) {
     ESP_LOGI(TAG, "WiFi Test Connection button clicked");
 #if ENABLE_WIFI
     // Show modal popup
     lv_obj_t *mbox = lv_msgbox_create(lv_scr_act(), "WiFi Test",
-        "Pinging gateway...\nPlease wait.", NULL, false);
+        "Testing connectivity to the gateway...\nPlease wait.", NULL, false);
     lv_obj_center(mbox);
 
+    // Force immediate rendering
+    lv_refr_now(NULL);
+
     if (wifi_status_label) {
-        lv_label_set_text(wifi_status_label, "Testing connection...");
+        lv_label_set_text(wifi_status_label, "Testing connectivity...");
     }
 
     uint32_t ping_time_ms = 0;
@@ -2448,24 +2805,24 @@ static void wifi_test_clicked(lv_event_t *e) {
 // WiFi Setup Screen
 static lv_obj_t* create_wifi_setup_screen(lv_obj_t *menu_screen_ref) {
     lv_obj_t *screen = lv_obj_create(NULL);
-    lv_obj_set_style_bg_color(screen, lv_color_hex(THEME_SCREEN_BG), 0);
+    lv_obj_add_style(screen, ui_styles_get_screen_bg(g_screen_styles), 0);
 
     // Create header
-    lv_obj_t *header = ui_header_create(screen);
+    lv_obj_t *header = ui_header_create(screen, g_screen_styles);
     ui_header_set_gps_status(header, false);
     wifi_screen_header = header;  // Store header reference for status updates
 
     // Title
     lv_obj_t *title = lv_label_create(screen);
     lv_label_set_text(title, "WiFi Setup");
-    THEME_STYLE_TEXT(title, THEME_TITLE_COLOR, FONT_TITLE);
+    lv_obj_add_style(title, ui_styles_get_title(g_screen_styles), 0);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, HEADER_HEIGHT + SPACING_MARGIN_SMALL);
 
     // Status panel
     lv_obj_t *status_panel = lv_obj_create(screen);
     lv_obj_set_size(status_panel, 750, 60);
     lv_obj_align(status_panel, LV_ALIGN_TOP_MID, 0, HEADER_HEIGHT + 50);
-    lv_obj_set_style_bg_color(status_panel, lv_color_hex(0x1a1a1a), 0);
+    lv_obj_add_style(status_panel, ui_styles_get_panel(g_screen_styles), 0);
     lv_obj_set_style_border_width(status_panel, 1, 0);
     lv_obj_set_style_border_color(status_panel, lv_color_hex(0x444444), 0);
 
@@ -2496,7 +2853,7 @@ static lv_obj_t* create_wifi_setup_screen(lv_obj_t *menu_screen_ref) {
     lv_obj_t *scan_btn = lv_btn_create(screen);
     lv_obj_set_size(scan_btn, 200, 50);
     lv_obj_align(scan_btn, LV_ALIGN_TOP_LEFT, 30, HEADER_HEIGHT + 130);
-    THEME_STYLE_BUTTON(scan_btn, COLOR_PRIMARY);
+    apply_3d_button_style(scan_btn, COLOR_PRIMARY);
     lv_obj_add_event_cb(scan_btn, wifi_scan_clicked, LV_EVENT_CLICKED, NULL);
 
     lv_obj_t *scan_label = lv_label_create(scan_btn);
@@ -2508,7 +2865,7 @@ static lv_obj_t* create_wifi_setup_screen(lv_obj_t *menu_screen_ref) {
     lv_obj_t *adhoc_btn = lv_btn_create(screen);
     lv_obj_set_size(adhoc_btn, 200, 50);
     lv_obj_align(adhoc_btn, LV_ALIGN_TOP_MID, 0, HEADER_HEIGHT + 130);
-    THEME_STYLE_BUTTON(adhoc_btn, COLOR_PRIMARY);
+    apply_3d_button_style(adhoc_btn, COLOR_PRIMARY);
     lv_obj_add_event_cb(adhoc_btn, wifi_adhoc_clicked, LV_EVENT_CLICKED, NULL);
 
     lv_obj_t *adhoc_label = lv_label_create(adhoc_btn);
@@ -2520,7 +2877,7 @@ static lv_obj_t* create_wifi_setup_screen(lv_obj_t *menu_screen_ref) {
     lv_obj_t *forget_btn = lv_btn_create(screen);
     lv_obj_set_size(forget_btn, 200, 50);
     lv_obj_align(forget_btn, LV_ALIGN_TOP_RIGHT, -30, HEADER_HEIGHT + 130);
-    THEME_STYLE_BUTTON(forget_btn, THEME_BTN_DANGER);
+    apply_3d_button_style(forget_btn, THEME_BTN_DANGER);
     lv_obj_add_event_cb(forget_btn, wifi_forget_clicked, LV_EVENT_CLICKED, NULL);
 
     lv_obj_t *forget_label = lv_label_create(forget_btn);
@@ -2532,11 +2889,11 @@ static lv_obj_t* create_wifi_setup_screen(lv_obj_t *menu_screen_ref) {
     lv_obj_t *test_btn = lv_btn_create(screen);
     lv_obj_set_size(test_btn, 200, 50);
     lv_obj_align(test_btn, LV_ALIGN_TOP_LEFT, 30, HEADER_HEIGHT + 190);
-    THEME_STYLE_BUTTON(test_btn, COLOR_PRIMARY);
+    apply_3d_button_style(test_btn, COLOR_PRIMARY);
     lv_obj_add_event_cb(test_btn, wifi_test_clicked, LV_EVENT_CLICKED, NULL);
 
     lv_obj_t *test_label = lv_label_create(test_btn);
-    lv_label_set_text(test_label, LV_SYMBOL_CALL " Test");
+    lv_label_set_text(test_label, LV_SYMBOL_CALL " TEST");
     THEME_STYLE_TEXT(test_label, COLOR_TEXT_PRIMARY, FONT_BUTTON_SMALL);
     lv_obj_center(test_label);
 
@@ -2544,7 +2901,7 @@ static lv_obj_t* create_wifi_setup_screen(lv_obj_t *menu_screen_ref) {
     lv_obj_t *disconnect_btn = lv_btn_create(screen);
     lv_obj_set_size(disconnect_btn, 200, 50);
     lv_obj_align(disconnect_btn, LV_ALIGN_TOP_RIGHT, -30, HEADER_HEIGHT + 190);
-    THEME_STYLE_BUTTON(disconnect_btn, THEME_BTN_DANGER);
+    apply_3d_button_style(disconnect_btn, THEME_BTN_DANGER);
     lv_obj_add_event_cb(disconnect_btn, wifi_disconnect_clicked, LV_EVENT_CLICKED, NULL);
 
     lv_obj_t *disconnect_label = lv_label_create(disconnect_btn);
@@ -2569,7 +2926,7 @@ static lv_obj_t* create_wifi_setup_screen(lv_obj_t *menu_screen_ref) {
     lv_obj_t *back_btn = lv_btn_create(screen);
     lv_obj_set_size(back_btn, 150, 50);
     lv_obj_align(back_btn, LV_ALIGN_BOTTOM_LEFT, 30, -20);
-    THEME_STYLE_BUTTON(back_btn, THEME_BTN_CANCEL);
+    apply_3d_button_style(back_btn, THEME_BTN_CANCEL);
     lv_obj_add_event_cb(back_btn, wifi_setup_back_clicked, LV_EVENT_CLICKED, menu_screen_ref);
 
     lv_obj_t *back_label = lv_label_create(back_btn);
@@ -2604,16 +2961,16 @@ static void bluetooth_setup_back_clicked(lv_event_t *e) {
 
 static lv_obj_t* create_bluetooth_setup_screen(lv_obj_t *menu_screen_ref) {
     lv_obj_t *screen = lv_obj_create(NULL);
-    lv_obj_set_style_bg_color(screen, lv_color_hex(THEME_SCREEN_BG), 0);
+    lv_obj_add_style(screen, ui_styles_get_screen_bg(g_screen_styles), 0);
 
     // Create header
-    lv_obj_t *header = ui_header_create(screen);
+    lv_obj_t *header = ui_header_create(screen, g_screen_styles);
     ui_header_set_gps_status(header, false);
 
     // Title
     lv_obj_t *title = lv_label_create(screen);
     lv_label_set_text(title, "Bluetooth Setup");
-    THEME_STYLE_TEXT(title, THEME_TITLE_COLOR, FONT_TITLE);
+    lv_obj_add_style(title, ui_styles_get_title(g_screen_styles), 0);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, HEADER_HEIGHT + SPACING_MARGIN_SMALL);
 
     // Info label
@@ -2723,16 +3080,16 @@ static void system_config_cancel_clicked(lv_event_t *e) {
 
 static lv_obj_t* create_system_config_screen(lv_obj_t *tools_screen_ref) {
     lv_obj_t *screen = lv_obj_create(NULL);
-    lv_obj_set_style_bg_color(screen, lv_color_hex(THEME_SCREEN_BG), 0);
+    lv_obj_add_style(screen, ui_styles_get_screen_bg(g_screen_styles), 0);
 
     // Create header
-    lv_obj_t *header = ui_header_create(screen);
+    lv_obj_t *header = ui_header_create(screen, g_screen_styles);
     ui_header_set_gps_status(header, false);
 
     // Title
     lv_obj_t *title = lv_label_create(screen);
     lv_label_set_text(title, "CONFIGURATION");
-    THEME_STYLE_TEXT(title, THEME_TITLE_COLOR, FONT_TITLE);
+    lv_obj_add_style(title, ui_styles_get_title(g_screen_styles), 0);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, HEADER_HEIGHT + SPACING_MARGIN_SMALL);
 
     // Scrollable content area
@@ -2918,16 +3275,16 @@ static void save_config_back_clicked(lv_event_t *e) {
 
 static lv_obj_t* create_save_config_screen(lv_obj_t *tools_screen_ref) {
     lv_obj_t *screen = lv_obj_create(NULL);
-    lv_obj_set_style_bg_color(screen, lv_color_hex(THEME_SCREEN_BG), 0);
+    lv_obj_add_style(screen, ui_styles_get_screen_bg(g_screen_styles), 0);
 
     // Create header
-    lv_obj_t *header = ui_header_create(screen);
+    lv_obj_t *header = ui_header_create(screen, g_screen_styles);
     ui_header_set_gps_status(header, false);
 
     // Title
     lv_obj_t *title = lv_label_create(screen);
     lv_label_set_text(title, "SAVE CONFIG");
-    THEME_STYLE_TEXT(title, THEME_TITLE_COLOR, FONT_TITLE);
+    lv_obj_add_style(title, ui_styles_get_title(g_screen_styles), 0);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, HEADER_HEIGHT + SPACING_MARGIN_SMALL);
 
     // Info label
@@ -2966,16 +3323,16 @@ static void load_config_back_clicked(lv_event_t *e) {
 
 static lv_obj_t* create_load_config_screen(lv_obj_t *tools_screen_ref) {
     lv_obj_t *screen = lv_obj_create(NULL);
-    lv_obj_set_style_bg_color(screen, lv_color_hex(THEME_SCREEN_BG), 0);
+    lv_obj_add_style(screen, ui_styles_get_screen_bg(g_screen_styles), 0);
 
     // Create header
-    lv_obj_t *header = ui_header_create(screen);
+    lv_obj_t *header = ui_header_create(screen, g_screen_styles);
     ui_header_set_gps_status(header, false);
 
     // Title
     lv_obj_t *title = lv_label_create(screen);
     lv_label_set_text(title, "LOAD CONFIG");
-    THEME_STYLE_TEXT(title, THEME_TITLE_COLOR, FONT_TITLE);
+    lv_obj_add_style(title, ui_styles_get_title(g_screen_styles), 0);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, HEADER_HEIGHT + SPACING_MARGIN_SMALL);
 
     // Info label
@@ -3023,16 +3380,16 @@ static void factory_reset_confirm_clicked(lv_event_t *e) {
 
 static lv_obj_t* create_factory_reset_screen(lv_obj_t *tools_screen_ref) {
     lv_obj_t *screen = lv_obj_create(NULL);
-    lv_obj_set_style_bg_color(screen, lv_color_hex(THEME_SCREEN_BG), 0);
+    lv_obj_add_style(screen, ui_styles_get_screen_bg(g_screen_styles), 0);
 
     // Create header
-    lv_obj_t *header = ui_header_create(screen);
+    lv_obj_t *header = ui_header_create(screen, g_screen_styles);
     ui_header_set_gps_status(header, false);
 
     // Title
     lv_obj_t *title = lv_label_create(screen);
     lv_label_set_text(title, "FACTORY RESET");
-    THEME_STYLE_TEXT(title, THEME_TITLE_COLOR, FONT_TITLE);
+    lv_obj_add_style(title, ui_styles_get_title(g_screen_styles), 0);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, HEADER_HEIGHT + SPACING_MARGIN_SMALL);
 
     // Warning label
@@ -3085,18 +3442,24 @@ typedef struct {
 /**
  * TOOLS SCREEN - System Utilities
  */
-lv_obj_t* create_tools_screen(ui_footer_page_cb_t page_callback, lv_obj_t **footer_out) {
+lv_obj_t* create_tools_screen(ui_footer_page_cb_t page_callback, lv_obj_t **footer_out, ui_styles_t* styles) {
+    g_screen_styles = styles;  // Store for callbacks
+
     lv_obj_t *screen = lv_obj_create(NULL);
-    lv_obj_set_style_bg_color(screen, lv_color_hex(THEME_SCREEN_BG), 0);
+    lv_obj_add_style(screen, ui_styles_get_screen_bg(styles), 0);
+
+    // Enable all-directional scrolling for swipe gestures (left, right, up, down)
+    lv_obj_set_scrollbar_mode(screen, LV_SCROLLBAR_MODE_AUTO);
+    lv_obj_set_scroll_dir(screen, LV_DIR_ALL);  // All directions
 
     // Create header bar with satellite icon
-    lv_obj_t *header = ui_header_create(screen);
+    lv_obj_t *header = ui_header_create(screen, styles);
     ui_header_set_gps_status(header, false);  // Default to GPS not found
 
     // Title (positioned below header)
     lv_obj_t *title = lv_label_create(screen);
     lv_label_set_text(title, "SYSTEM TOOLS");
-    THEME_STYLE_TEXT(title, THEME_TITLE_COLOR, FONT_TITLE);
+    lv_obj_add_style(title, ui_styles_get_title(styles), 0);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, HEADER_HEIGHT + SPACING_MARGIN_SMALL);
 
     // Define all tool buttons (add/remove buttons here and layout adjusts automatically)
@@ -3105,7 +3468,6 @@ lv_obj_t* create_tools_screen(ui_footer_page_cb_t page_callback, lv_obj_t **foot
         {"Logs", tools_logs_clicked},
         {"Clear\nGPS Track", tools_clear_clicked},
         {"CONFIG", tools_config_clicked},
-        {"WiFi/BT", tools_wifi_bt_clicked},
         {"System\nInfo", tools_sysinfo_clicked},
         {"Test\nHardware", tools_test_clicked},
         {"Factory\nReset", tools_reset_clicked},
@@ -3155,7 +3517,7 @@ lv_obj_t* create_tools_screen(ui_footer_page_cb_t page_callback, lv_obj_t **foot
     }
 
     // Create footer
-    lv_obj_t *footer = ui_footer_create(screen, PAGE_TOOLS, page_callback);
+    lv_obj_t *footer = ui_footer_create(screen, PAGE_TOOLS, page_callback, styles);
     if (footer != NULL) {
         ui_footer_show(footer);
         lv_obj_move_foreground(footer);
@@ -3267,12 +3629,14 @@ static void display_screen_gesture_cb(lv_event_t *e) {
 /**
  * DISPLAY SCREEN - Main Anchor Monitoring
  */
-lv_obj_t* create_display_screen(ui_footer_page_cb_t page_callback, lv_obj_t **footer_out) {
+lv_obj_t* create_display_screen(ui_footer_page_cb_t page_callback, lv_obj_t **footer_out, ui_styles_t* styles) {
+    g_screen_styles = styles;  // Store for callbacks
+
     lv_obj_t *screen = lv_obj_create(NULL);
     lv_obj_set_style_bg_color(screen, lv_color_hex(0xADD8E6), 0);  // Light Blue background
 
     // Create header bar with satellite icon
-    lv_obj_t *header = ui_header_create(screen);
+    lv_obj_t *header = ui_header_create(screen, styles);
     ui_header_set_gps_status(header, false);  // Default to GPS not found
     register_header_callbacks(header);
 
@@ -3280,7 +3644,7 @@ lv_obj_t* create_display_screen(ui_footer_page_cb_t page_callback, lv_obj_t **fo
     lv_obj_t *status_bar = lv_obj_create(screen);
     lv_obj_set_size(status_bar, 800, 40);
     lv_obj_align(status_bar, LV_ALIGN_TOP_MID, 0, HEADER_HEIGHT);
-    lv_obj_set_style_bg_color(status_bar, lv_color_hex(THEME_PANEL_BG), 0);
+    lv_obj_add_style(status_bar, ui_styles_get_panel(styles), 0);
     lv_obj_set_style_radius(status_bar, 0, 0);
     lv_obj_set_style_border_width(status_bar, 0, 0);
 
@@ -3328,7 +3692,7 @@ lv_obj_t* create_display_screen(ui_footer_page_cb_t page_callback, lv_obj_t **fo
     lv_obj_center(anchor_text);
 
     // Create footer navigation bar (swipe up menu)
-    lv_obj_t *footer = ui_footer_create(screen, PAGE_START, page_callback);
+    lv_obj_t *footer = ui_footer_create(screen, PAGE_START, page_callback, styles);
     if (footer != NULL) {
         ui_footer_show(footer);
         lv_obj_move_foreground(footer);
@@ -3400,18 +3764,20 @@ static lv_obj_t* create_test_toggle(lv_obj_t *parent, const char *label, const c
 /**
  * TEST SCREEN - Hardware Testing
  */
-lv_obj_t* create_test_screen(void) {
+lv_obj_t* create_test_screen(ui_styles_t* styles) {
+    g_screen_styles = styles;  // Store for callbacks
+
     lv_obj_t *screen = lv_obj_create(NULL);
-    lv_obj_set_style_bg_color(screen, lv_color_hex(THEME_SCREEN_BG), 0);
+    lv_obj_add_style(screen, ui_styles_get_screen_bg(styles), 0);
 
     // Create header bar with satellite icon
-    lv_obj_t *header = ui_header_create(screen);
+    lv_obj_t *header = ui_header_create(screen, styles);
     ui_header_set_gps_status(header, false);  // Default to GPS not found
 
     // Title (positioned below header)
     lv_obj_t *title = lv_label_create(screen);
     lv_label_set_text(title, "HARDWARE TEST");
-    THEME_STYLE_TEXT(title, THEME_TITLE_COLOR, FONT_TITLE);
+    lv_obj_add_style(title, ui_styles_get_title(styles), 0);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, HEADER_HEIGHT + SPACING_MARGIN_SMALL);
 
     // Left column - Hardware controls

@@ -47,10 +47,16 @@
 #include "wifi_manager.h"
 #endif
 
+#include "gps_manager.h"
+#include "ui_styles.h"
+
 // External font declarations
 LV_FONT_DECLARE(orbitron_variablefont_wght_24);
 
 static const char *TAG = "anchor-drag-pro";
+
+// Global style manager instance
+static ui_styles_t *g_styles = NULL;
 
 // Global footer reference for touch handler
 static lv_obj_t *g_footer = NULL;
@@ -73,13 +79,14 @@ static void footer_page_callback(ui_page_t page);
  */
 static void global_gesture_cb(lv_event_t *e) {
     lv_event_code_t code = lv_event_get_code(e);
+    lv_obj_t *target = lv_event_get_target(e);
 
     if (code == LV_EVENT_PRESSED) {
         // Touch started - record starting position
         lv_indev_t *indev = lv_indev_get_act();
         lv_indev_get_point(indev, &touch_start);
         touch_started = true;
-        ESP_LOGI(TAG, "Touch started at X=%d, Y=%d", touch_start.x, touch_start.y);
+        ESP_LOGI(TAG, "Touch PRESSED at X=%d, Y=%d on %p", touch_start.x, touch_start.y, (void*)target);
 
     } else if (code == LV_EVENT_PRESSING) {
         // Touch moving - check for swipe gestures
@@ -91,32 +98,46 @@ static void global_gesture_cb(lv_event_t *e) {
             int16_t delta_x = current.x - touch_start.x;  // Positive = rightward movement
             int16_t delta_y = touch_start.y - current.y;  // Positive = upward movement
 
-            // Swipe up - show footer
+            // Log every 20 pixels of movement for debugging
+            static int last_log_x = 0, last_log_y = 0;
+            if (abs(delta_x - last_log_x) > 20 || abs(delta_y - last_log_y) > 20) {
+                ESP_LOGI(TAG, "PRESSING: dX=%d, dY=%d", delta_x, delta_y);
+                last_log_x = delta_x;
+                last_log_y = delta_y;
+            }
+
+            // Swipe up - show footer (50px threshold)
             if (delta_y > 50 && abs(delta_x) < 30) {
-                ESP_LOGI(TAG, "Swipe up detected! Delta Y=%d - showing footer", delta_y);
+                ESP_LOGI(TAG, ">>> SWIPE UP detected! Delta Y=%d - showing footer", delta_y);
                 if (g_footer != NULL) {
                     ui_footer_show(g_footer);
                 }
                 touch_started = false;  // Prevent multiple triggers
+                last_log_x = last_log_y = 0;
             }
-            // Swipe left - next screen
-            else if (delta_x < -80 && abs(delta_y) < 40) {
-                ESP_LOGI(TAG, "Swipe left detected! Delta X=%d - next screen", delta_x);
+            // Swipe left - next screen (reduced threshold to 60px)
+            else if (delta_x < -60 && abs(delta_y) < 50) {
+                ESP_LOGI(TAG, ">>> SWIPE LEFT detected! Delta X=%d - next screen", delta_x);
                 ui_page_t next_page = (g_current_page + 1) % PAGE_COUNT;
                 footer_page_callback(next_page);
                 touch_started = false;
+                last_log_x = last_log_y = 0;
             }
-            // Swipe right - previous screen
-            else if (delta_x > 80 && abs(delta_y) < 40) {
-                ESP_LOGI(TAG, "Swipe right detected! Delta X=%d - previous screen", delta_x);
+            // Swipe right - previous screen (reduced threshold to 60px)
+            else if (delta_x > 60 && abs(delta_y) < 50) {
+                ESP_LOGI(TAG, ">>> SWIPE RIGHT detected! Delta X=%d - previous screen", delta_x);
                 ui_page_t prev_page = (g_current_page + PAGE_COUNT - 1) % PAGE_COUNT;
                 footer_page_callback(prev_page);
                 touch_started = false;
+                last_log_x = last_log_y = 0;
             }
         }
 
     } else if (code == LV_EVENT_RELEASED || code == LV_EVENT_PRESS_LOST) {
         // Touch ended
+        if (touch_started) {
+            ESP_LOGI(TAG, "Touch RELEASED");
+        }
         touch_started = false;
     }
 }
@@ -461,6 +482,15 @@ void app_main(void)
     }
     #endif
 
+    // Initialize GPS Manager
+    ESP_LOGI(TAG, "Initializing GPS Manager...");
+    ret = gps_manager_init();
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "GPS Manager initialization failed: %s", esp_err_to_name(ret));
+    } else {
+        ESP_LOGI(TAG, "GPS Manager initialized successfully");
+    }
+
     // Initialize RTC (Real-Time Clock)
     ESP_LOGI(TAG, "Initializing RTC (PCF85063A)...");
     PCF85063A_Init();
@@ -585,6 +615,15 @@ void app_main(void)
 
     ESP_LOGI(TAG, "Display and LVGL initialized successfully (Mode 3: Direct-Mode)");
 
+    // Create style manager for UI styling
+    ESP_LOGI(TAG, "Creating UI style manager...");
+    g_styles = ui_styles_create();
+    if (g_styles == NULL) {
+        ESP_LOGE(TAG, "Failed to create UI style manager");
+        return;
+    }
+    ESP_LOGI(TAG, "UI style manager created successfully");
+
     // Create TV test pattern (custom image)
     ESP_LOGI(TAG, "Creating TV test pattern from image...");
     if (lvgl_lock(1000)) {
@@ -703,12 +742,12 @@ void app_main(void)
     // Create all navigation screens
     ESP_LOGI(TAG, "Creating navigation screens...");
     if (lvgl_lock(2000)) {
-        g_screens[PAGE_START] = create_start_screen(footer_page_callback, &g_footers[PAGE_START]);
-        g_screens[PAGE_INFO] = create_info_screen(footer_page_callback, &g_footers[PAGE_INFO]);
-        g_screens[PAGE_PGN] = create_pgn_screen(footer_page_callback, &g_footers[PAGE_PGN]);
-        g_screens[PAGE_CONFIG] = create_config_screen(footer_page_callback, &g_footers[PAGE_CONFIG]);
-        g_screens[PAGE_UPDATE] = create_update_screen(footer_page_callback, &g_footers[PAGE_UPDATE]);
-        g_screens[PAGE_TOOLS] = create_tools_screen(footer_page_callback, &g_footers[PAGE_TOOLS]);
+        g_screens[PAGE_START] = create_start_screen(footer_page_callback, &g_footers[PAGE_START], g_styles);
+        g_screens[PAGE_INFO] = create_info_screen(footer_page_callback, &g_footers[PAGE_INFO], g_styles);
+        g_screens[PAGE_PGN] = create_pgn_screen(footer_page_callback, &g_footers[PAGE_PGN], g_styles);
+        g_screens[PAGE_CONFIG] = create_config_screen(footer_page_callback, &g_footers[PAGE_CONFIG], g_styles);
+        g_screens[PAGE_UPDATE] = create_update_screen(footer_page_callback, &g_footers[PAGE_UPDATE], g_styles);
+        g_screens[PAGE_TOOLS] = create_tools_screen(footer_page_callback, &g_footers[PAGE_TOOLS], g_styles);
 
         // Add gesture detection to all navigation screens
         for (int i = 0; i < PAGE_COUNT; i++) {
@@ -772,7 +811,7 @@ void app_main(void)
     ESP_LOGI(TAG, "Navigation screens ready - use footer buttons to switch between pages");
 
     // RTC time update task - updates header time displays every second
-    ESP_LOGI(TAG, "Starting RTC time update task...");
+    ESP_LOGI(TAG, "Starting RTC time update task and GPS polling...");
     datetime_t rtc_current;
     int update_count = 0;
     while (1) {
@@ -782,6 +821,60 @@ void app_main(void)
         // Log time every 10 seconds
         if (update_count % 10 == 0) {
             ESP_LOGI(TAG, "RTC Time: %02d:%02d:%02d", rtc_current.hour, rtc_current.min, rtc_current.sec);
+        }
+
+        // Poll GPS every 5 seconds
+        if (update_count % 5 == 0) {
+            // Update GPS data from configured source
+            gps_manager_update();
+
+            // Get the updated GPS data
+            gps_data_t gps_data;
+            esp_err_t gps_ret = gps_manager_get_data(&gps_data);
+            bool gps_valid = (gps_ret == ESP_OK && gps_data.valid);
+
+            // Update GPS header icon on all screens
+            if (lvgl_lock(50)) {
+                for (int i = 0; i < PAGE_COUNT; i++) {
+                    if (g_screens[i] != NULL) {
+                        lv_obj_t *screen = g_screens[i];
+                        uint32_t child_count = lv_obj_get_child_cnt(screen);
+                        for (uint32_t j = 0; j < child_count; j++) {
+                            lv_obj_t *child = lv_obj_get_child(screen, j);
+                            if (child != NULL) {
+                                ui_header_set_gps_status(child, gps_valid);
+                                break;  // Only one header per screen
+                            }
+                        }
+                    }
+                }
+
+                // Update active screen header
+                lv_obj_t *active_screen = lv_scr_act();
+                if (active_screen != NULL) {
+                    uint32_t child_count = lv_obj_get_child_cnt(active_screen);
+                    for (uint32_t j = 0; j < child_count; j++) {
+                        lv_obj_t *child = lv_obj_get_child(active_screen, j);
+                        if (child != NULL) {
+                            ui_header_set_gps_status(child, gps_valid);
+                            break;
+                        }
+                    }
+                }
+                lvgl_unlock();
+            }
+
+            if (gps_valid) {
+                if (update_count % 10 == 0) {
+                    ESP_LOGI(TAG, "GPS: %.6f, %.6f (Source: %s)",
+                             gps_data.latitude, gps_data.longitude,
+                             gps_manager_source_to_string(gps_data.source));
+                }
+            } else {
+                if (update_count % 10 == 0) {
+                    ESP_LOGW(TAG, "GPS: No valid fix");
+                }
+            }
         }
 
         // Update header time displays on all screens

@@ -30,6 +30,7 @@
 #define UI_HEADER_H
 
 #include "lvgl.h"
+#include "ui_styles.h"
 #include <stdbool.h>
 
 // Header dimensions
@@ -39,9 +40,10 @@
 /**
  * Create full-width header bar with title and icon placeholders
  * @param parent Parent screen/container to attach header to
+ * @param styles Style manager for consistent styling
  * @return Pointer to header container object
  */
-lv_obj_t* ui_header_create(lv_obj_t *parent);
+lv_obj_t* ui_header_create(lv_obj_t *parent, ui_styles_t* styles);
 
 /**
  * Update GPS status icon (rightmost icon - position 6)

@@ -6,7 +6,7 @@ The# Anchor Drag Alarm - UI Screen Guide
 **Author:** Colin Bitterfield
 **Date Updated:** 2025-12-26
 **Hardware:** Waveshare ESP32-S3-Touch-LCD-4.3B (800×480 IPS display)
-**UI Framework:** LVGL 9.2.0
+**UI Framework:** LVGL 8.4.0
 **Configuration Storage:** ESP32 NVS (Non-Volatile Storage)
 
 ---

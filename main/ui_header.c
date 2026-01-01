@@ -93,7 +93,7 @@ static void tfcard_icon_clicked(lv_event_t *e) {
 /**
  * Create full-width header bar with title and icon placeholders
  */
-lv_obj_t* ui_header_create(lv_obj_t *parent) {
+lv_obj_t* ui_header_create(lv_obj_t *parent, ui_styles_t* styles) {
     ESP_LOGI(TAG, "Creating full-width header bar");
 
     // Allocate header data (LVGL 8.x)
@@ -108,8 +108,14 @@ lv_obj_t* ui_header_create(lv_obj_t *parent) {
     data->header_bar = lv_obj_create(parent);
     lv_obj_set_size(data->header_bar, HEADER_WIDTH, HEADER_HEIGHT);
     lv_obj_align(data->header_bar, LV_ALIGN_TOP_MID, 0, 0);
-    lv_obj_set_style_bg_color(data->header_bar, lv_color_hex(0x001F3F), 0);  // Marine dark
-    lv_obj_set_style_bg_opa(data->header_bar, LV_OPA_COVER, 0);
+    if (styles != NULL) {
+        lv_obj_add_style(data->header_bar, ui_styles_get_panel(styles), 0);
+        // Override for header-specific styling
+        lv_obj_set_style_bg_color(data->header_bar, lv_color_hex(0x001F3F), 0);  // Marine dark
+    } else {
+        lv_obj_set_style_bg_color(data->header_bar, lv_color_hex(0x001F3F), 0);  // Marine dark
+        lv_obj_set_style_bg_opa(data->header_bar, LV_OPA_COVER, 0);
+    }
     lv_obj_set_style_border_width(data->header_bar, 0, 0);
     lv_obj_set_style_pad_all(data->header_bar, 0, 0);
     lv_obj_set_style_radius(data->header_bar, 0, 0);
@@ -118,15 +124,27 @@ lv_obj_t* ui_header_create(lv_obj_t *parent) {
     // Title label: "ANCHOR DRAG ALARM" (center, top)
     data->title_label = lv_label_create(data->header_bar);
     lv_label_set_text(data->title_label, "ANCHOR DRAG ALARM");
-    lv_obj_set_style_text_color(data->title_label, lv_color_white(), 0);
-    lv_obj_set_style_text_font(data->title_label, FONT_TITLE, 0);
+    if (styles != NULL) {
+        lv_obj_add_style(data->title_label, ui_styles_get_title(styles), 0);
+        // Override text color to white for header
+        lv_obj_set_style_text_color(data->title_label, lv_color_white(), 0);
+    } else {
+        lv_obj_set_style_text_color(data->title_label, lv_color_white(), 0);
+        lv_obj_set_style_text_font(data->title_label, FONT_TITLE, 0);
+    }
     lv_obj_align(data->title_label, LV_ALIGN_CENTER, 0, -20);
 
     // Time label: "HH:MM:SS" (center, below title)
     data->time_label = lv_label_create(data->header_bar);
     lv_label_set_text(data->time_label, "--:--:--");
-    lv_obj_set_style_text_color(data->time_label, lv_color_hex(0x39CCCC), 0);  // Teal accent
-    lv_obj_set_style_text_font(data->time_label, &lv_font_montserrat_14, 0);
+    if (styles != NULL) {
+        lv_obj_add_style(data->time_label, ui_styles_get_subtitle(styles), 0);
+        // Override for header-specific teal color
+        lv_obj_set_style_text_color(data->time_label, lv_color_hex(0x39CCCC), 0);  // Teal accent
+    } else {
+        lv_obj_set_style_text_color(data->time_label, lv_color_hex(0x39CCCC), 0);  // Teal accent
+        lv_obj_set_style_text_font(data->time_label, &lv_font_montserrat_14, 0);
+    }
     lv_obj_align(data->time_label, LV_ALIGN_CENTER, 0, 20);
 
     // Create 3 left icon placeholders

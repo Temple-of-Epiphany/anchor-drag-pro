@@ -6,7 +6,7 @@
  * Date Created: 2025-12-20
  * Version: 0.1.1
  *
- * LVGL v9.2.0 configuration for ESP32-S3 with 800x480 RGB LCD
+ * LVGL v8.4.0 configuration for ESP32-S3 with 800x480 RGB LCD
  */
 
 #ifndef LV_CONF_H

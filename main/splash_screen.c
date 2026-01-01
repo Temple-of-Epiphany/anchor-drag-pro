@@ -29,6 +29,12 @@
 #include <sys/stat.h>
 #include <string.h>
 
+#if ENABLE_WIFI
+#include "wifi_manager.h"
+#endif
+
+#include "gps_manager.h"
+
 static const char *TAG = "splash_screen";
 
 // LVGL UI objects
@@ -370,12 +376,38 @@ esp_err_t run_self_test(selftest_results_t *results) {
     update_progress(0, "Starting self-test...");
     vTaskDelay(pdMS_TO_TICKS(500));
 
-    // Test 1: TF Card Detection (Progress: 0% -> 25%)
+    // Test 1: WiFi Status Check (Progress: 0% -> 15%)
+    #if ENABLE_WIFI
+    printf("                         WiFi: ");
+    fflush(stdout);
+    update_progress(5, "Checking WiFi...");
+    results->wifi_connected = wifi_manager_is_connected();
+    printf("%s\n", results->wifi_connected ? "✓ Connected" : "✗ Not connected");
+
+    // Update WiFi icon in header
+    if (lvgl_lock(100)) {
+        ui_header_set_wifi_status(status_header, results->wifi_connected);
+        lvgl_unlock();
+    }
+
+    update_progress(15, results->wifi_connected ? "WiFi: Connected" : "WiFi: Disconnected");
+    #else
+    update_progress(15, "WiFi: Disabled");
+    #endif
+
+    // Test 2: TF Card Detection (Progress: 15% -> 25%)
     printf("                         TF Card: ");
     fflush(stdout);
-    update_progress(10, "Checking TF Card...");
+    update_progress(18, "Checking TF Card...");
     results->tf_card_present = check_tf_card();
     printf("%s\n", results->tf_card_present ? "✓" : "✗");
+
+    // Update TF Card icon in header
+    if (lvgl_lock(100)) {
+        ui_header_set_tfcard_status(status_header, results->tf_card_present);
+        lvgl_unlock();
+    }
+
     update_progress(25, results->tf_card_present ? "TF Card: OK" : "TF Card: Not Found");
 
     // If TF card present, check for update.bin
@@ -386,13 +418,20 @@ esp_err_t run_self_test(selftest_results_t *results) {
         printf("%s\n", results->update_bin_found ? "FOUND" : "Not found");
     }
 
-    // Test 2: GPS Source Detection (Priority Order) (Progress: 25% -> 100%)
+    // Test 3: GPS Source Detection (Priority Order) (Progress: 25% -> 100%)
     // Priority 1: N2K Data
     printf("                         N2K Data: ");
     fflush(stdout);
     update_progress(30, "Checking N2K GPS...");
     results->n2k_available = check_n2k_data(2000);
     printf("%s\n", results->n2k_available ? "✓" : "✗");
+
+    // Update N2K icon in header
+    if (lvgl_lock(100)) {
+        ui_header_set_n2k_status(status_header, results->n2k_available);
+        lvgl_unlock();
+    }
+
     update_progress(50, results->n2k_available ? "N2K GPS: OK" : "N2K GPS: Not Found");
 
     if (results->n2k_available) {
@@ -402,7 +441,10 @@ esp_err_t run_self_test(selftest_results_t *results) {
         ESP_LOGI(TAG, "GPS source: NMEA 2000 (highest priority)");
         update_progress(100, "GPS Ready: N2K");
         // Update header GPS status
-        ui_header_set_gps_status(status_header, true);
+        if (lvgl_lock(100)) {
+            ui_header_set_gps_status(status_header, true);
+            lvgl_unlock();
+        }
     } else {
         // Priority 2: NMEA 0183
         printf("                         NMEA 0183: ");
@@ -419,7 +461,10 @@ esp_err_t run_self_test(selftest_results_t *results) {
             ESP_LOGI(TAG, "GPS source: NMEA 0183 (secondary priority)");
             update_progress(100, "GPS Ready: NMEA 0183");
             // Update header GPS status
-            ui_header_set_gps_status(status_header, true);
+            if (lvgl_lock(100)) {
+                ui_header_set_gps_status(status_header, true);
+                lvgl_unlock();
+            }
         } else {
             // Priority 3: External GPS
             printf("                         External GPS: ");
@@ -433,16 +478,59 @@ esp_err_t run_self_test(selftest_results_t *results) {
                 results->gps_ready = true;
                 strncpy(results->gps_source, "External GPS (I2C)", sizeof(results->gps_source) - 1);
                 printf("                         GPS Ready: ✓\n");
-                ESP_LOGI(TAG, "GPS source: External GPS (lowest priority)");
+                ESP_LOGI(TAG, "GPS source: External GPS");
                 update_progress(100, "GPS Ready: External");
                 // Update header GPS status
-                ui_header_set_gps_status(status_header, true);
+                if (lvgl_lock(100)) {
+                    ui_header_set_gps_status(status_header, true);
+                    lvgl_unlock();
+                }
             } else {
+                // Priority 4: GPS URL (if WiFi connected)
+                #if ENABLE_WIFI
+                if (results->wifi_connected) {
+                    printf("                         GPS URL: ");
+                    fflush(stdout);
+                    update_progress(92, "Checking GPS URL...");
+                    // Try to read GPS data from URL (using GPS manager)
+                    gps_data_t gps_test_data;
+                    esp_err_t url_ret = gps_manager_get_data(&gps_test_data);
+                    bool url_valid = (url_ret == ESP_OK && gps_test_data.valid && gps_test_data.source == GPS_SOURCE_URL);
+                    results->gps_url_available = url_valid;
+                    printf("%s\n", url_valid ? "✓" : "✗");
+
+                    if (url_valid) {
+                        results->gps_ready = true;
+                        strncpy(results->gps_source, "GPS URL (Network)", sizeof(results->gps_source) - 1);
+                        printf("                         GPS Ready: ✓\n");
+                        ESP_LOGI(TAG, "GPS source: URL (lowest priority)");
+                        update_progress(100, "GPS Ready: URL");
+                        // Update header GPS status
+                        if (lvgl_lock(100)) {
+                            ui_header_set_gps_status(status_header, true);
+                            lvgl_unlock();
+                        }
+                    } else {
+                        results->gps_ready = false;
+                        strncpy(results->gps_source, "None", sizeof(results->gps_source) - 1);
+                        printf("                         GPS Ready: ✗ (No GPS found)\n");
+                        ESP_LOGW(TAG, "No GPS source detected!");
+                        update_progress(100, "Warning: No GPS Found");
+                    }
+                } else {
+                    results->gps_ready = false;
+                    strncpy(results->gps_source, "None", sizeof(results->gps_source) - 1);
+                    printf("                         GPS Ready: ✗ (No GPS found)\n");
+                    ESP_LOGW(TAG, "No GPS source detected!");
+                    update_progress(100, "Warning: No GPS Found");
+                }
+                #else
                 results->gps_ready = false;
                 strncpy(results->gps_source, "None", sizeof(results->gps_source) - 1);
                 printf("                         GPS Ready: ✗ (No GPS found)\n");
                 ESP_LOGW(TAG, "No GPS source detected!");
                 update_progress(100, "Warning: No GPS Found");
+                #endif
             }
         }
     }
@@ -506,22 +594,15 @@ esp_err_t splash_screen_run(uint32_t timeout_sec) {
     // Display initial splash to serial
     print_splash_banner();
 
-    // TEMPORARILY DISABLED: Show loading animation
-    // for (int i = 0; i < 10; i++) {
-    //     update_loading_animation();
-    //     vTaskDelay(pdMS_TO_TICKS(200));
-    // }
-    // printf("\n\n");
+    // Run self-test
+    esp_err_t ret = run_self_test(&results);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Self-test failed: %s", esp_err_to_name(ret));
+        return ret;
+    }
 
-    // TEMPORARILY DISABLED: Run self-test
-    // ret = run_self_test(&results);
-    // if (ret != ESP_OK) {
-    //     ESP_LOGE(TAG, "Self-test failed: %s", esp_err_to_name(ret));
-    //     return ret;
-    // }
-
-    // TEMPORARILY DISABLED: Display final results to serial
-    // display_splash(&results);
+    // Display final results to serial
+    display_splash(&results);
 
     // Wait a moment to show results
     vTaskDelay(pdMS_TO_TICKS(3000));

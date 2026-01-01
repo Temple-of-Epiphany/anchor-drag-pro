@@ -18,11 +18,13 @@
 
 // Self-test results structure
 typedef struct {
+    bool wifi_connected;
     bool tf_card_present;
     bool update_bin_found;
     bool n2k_available;
     bool nmea0183_available;
     bool external_gps_available;
+    bool gps_url_available;
     bool gps_ready;
     char gps_source[32];
 } selftest_results_t;

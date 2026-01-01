@@ -188,7 +188,7 @@ static void footer_gesture_event_cb(lv_event_t *e) {
 /**
  * Create navigation footer bar
  */
-lv_obj_t* ui_footer_create(lv_obj_t *parent, ui_page_t current_page, ui_footer_page_cb_t page_callback) {
+lv_obj_t* ui_footer_create(lv_obj_t *parent, ui_page_t current_page, ui_footer_page_cb_t page_callback, ui_styles_t* styles) {
     ESP_LOGI(TAG, "=== CREATING FOOTER BAR ===");
     ESP_LOGI(TAG, "    Initial page: [%s] (%d)", page_names[current_page], current_page);
     ESP_LOGI(TAG, "    Auto-hide timeout: %d ms", FOOTER_AUTO_HIDE_MS);
@@ -208,9 +208,16 @@ lv_obj_t* ui_footer_create(lv_obj_t *parent, ui_page_t current_page, ui_footer_p
     data->footer_bar = lv_obj_create(parent);
     lv_obj_set_size(data->footer_bar, FOOTER_WIDTH, FOOTER_HEIGHT);
     lv_obj_align(data->footer_bar, LV_ALIGN_BOTTOM_MID, 0, 0);
-    lv_obj_set_style_bg_color(data->footer_bar, lv_color_hex(0x001F3F), 0);  // Marine dark
-    lv_obj_set_style_bg_opa(data->footer_bar, LV_OPA_90, 0);  // Nearly opaque
-    lv_obj_set_style_border_width(data->footer_bar, 0, 0);  // No border
+    if (styles != NULL) {
+        lv_obj_add_style(data->footer_bar, ui_styles_get_panel(styles), 0);
+        // Override for footer-specific styling
+        lv_obj_set_style_bg_color(data->footer_bar, lv_color_hex(0x001F3F), 0);  // Marine dark
+        lv_obj_set_style_bg_opa(data->footer_bar, LV_OPA_90, 0);  // Nearly opaque
+    } else {
+        lv_obj_set_style_bg_color(data->footer_bar, lv_color_hex(0x001F3F), 0);  // Marine dark
+        lv_obj_set_style_bg_opa(data->footer_bar, LV_OPA_90, 0);  // Nearly opaque
+        lv_obj_set_style_border_width(data->footer_bar, 0, 0);  // No border
+    }
     lv_obj_set_style_pad_all(data->footer_bar, 10, 0);
     lv_obj_set_style_radius(data->footer_bar, 0, 0);
     lv_obj_clear_flag(data->footer_bar, LV_OBJ_FLAG_SCROLLABLE);

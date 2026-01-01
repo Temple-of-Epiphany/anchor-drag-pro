@@ -31,7 +31,7 @@ Anchor Drag Pro is a marine safety device for the Waveshare ESP32-S3-Touch-LCD-4
    - `rtc_pcf85063a.c` - Real-time clock with battery backup
    - Future: CAN/TWAI driver for NMEA 2000
 
-3. **UI Framework** (LVGL 9.2.0)
+3. **UI Framework** (LVGL 8.4.0)
    - `screens.c` - All 6 navigation screens (START, INFO, PGN, CONFIG, UPDATE, TOOLS)
    - `ui_header.c` - Header with RTC time, GPS status, battery indicator
    - `ui_footer.c` - Swipeable footer navigation bar
@@ -244,7 +244,7 @@ See `docs/garmin_nmea2000_pgn_reference.md` for complete PGN listing.
 
 ### Adding LVGL GUI
 
-1. Add LVGL component (v9.2.0) to `components/`
+1. Add LVGL component (v8.4.0) to `components/`
 2. Configure `lv_conf.h` for ESP32-S3 (800×480, RGB565)
 3. Implement display flush callback (RGB interface)
 4. Implement touch input driver (GT911)
@@ -486,12 +486,12 @@ idf.py menuconfig
 - **ESP-IDF Documentation:** https://docs.espressif.com/projects/esp-idf/en/latest/esp32s3/
 - **Waveshare Wiki:** https://www.waveshare.com/wiki/ESP32-S3-Touch-LCD-4.3B
 - **Waveshare Demo Code:** https://github.com/waveshareteam/ESP32-S3-Touch-LCD-4.3B
-- **LVGL Documentation:** https://docs.lvgl.io/
+- **LVGL 8.4 Documentation:** https://docs.lvgl.io/8.4/
 - **NMEA 2000 Standard:** https://www.nmea.org/nmea-2000.html
 
 ---
 
-**Last Updated:** 2025-12-26
+**Last Updated:** 2026-01-01
 **Project Status:** Core firmware functional - CAN/NMEA 2000 integration next
 **Current Version:** 0.1.1
 

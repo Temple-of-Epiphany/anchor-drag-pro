@@ -26,6 +26,7 @@
 #define UI_FOOTER_H
 
 #include "lvgl.h"
+#include "ui_styles.h"
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -56,9 +57,10 @@ typedef void (*ui_footer_page_cb_t)(ui_page_t page);
  * @param parent Parent screen/container to attach footer to
  * @param current_page Current page index (0-5)
  * @param page_callback Callback function when page button is clicked
+ * @param styles Style manager for consistent styling
  * @return Pointer to footer container object
  */
-lv_obj_t* ui_footer_create(lv_obj_t *parent, ui_page_t current_page, ui_footer_page_cb_t page_callback);
+lv_obj_t* ui_footer_create(lv_obj_t *parent, ui_page_t current_page, ui_footer_page_cb_t page_callback, ui_styles_t* styles);
 
 /**
  * Update current page

@@ -72,7 +72,7 @@ The project has been migrated from Arduino/Wio Terminal to ESP-IDF for the Waves
 
 4. **LVGL GUI Framework**
    - **Status:** NOT STARTED
-   - **Task:** Integrate LVGL 9.2.0 for UI rendering
+   - **Task:** Integrate LVGL 8.4.0 for UI rendering
    - **Components:**
      - LVGL initialization and configuration
      - Display flush callback for RGB interface
@@ -257,7 +257,7 @@ The project has been migrated from Arduino/Wio Terminal to ESP-IDF for the Waves
 - Development environment: ESP-IDF in CLion
 - Target board: Waveshare ESP32-S3-Touch-LCD-4.3B
 - Display resolution: 800×480 pixels
-- LVGL version: 9.2.0
+- LVGL version: 8.4.0
 - All simulators removed from project scope
 - Focus on hardware implementation only
 
