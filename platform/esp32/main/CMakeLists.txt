@@ -29,6 +29,7 @@ idf_component_register(SRCS "main.c"
                             "sd_card.c"
                             "wifi_manager.c"
                             "gps_manager.c"
+                            "gps_test.c"
                             # Custom fonts - Orbitron (futuristic/technical) - 16, 20, 24pt only
                             "fonts/orbitron_variablefont_wght_16.c"
                             "fonts/orbitron_variablefont_wght_20.c"

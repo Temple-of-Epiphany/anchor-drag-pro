@@ -431,6 +431,12 @@ void app_main(void)
     esp_log_level_set("ui_footer", ESP_LOG_INFO);  // Footer: info level (reduced from DEBUG)
     esp_log_level_set("screens", ESP_LOG_INFO);  // Screens: info level
 
+    // GPS and I2C debugging - enable DEBUG level for GPS testing
+    esp_log_level_set("gps_test", ESP_LOG_DEBUG);  // GPS test utility: DEBUG
+    esp_log_level_set("GPS_MGR", ESP_LOG_DEBUG);   // GPS manager: DEBUG
+    esp_log_level_set("i2c", ESP_LOG_DEBUG);       // I2C driver: DEBUG
+    esp_log_level_set("i2c_master", ESP_LOG_DEBUG); // I2C master: DEBUG
+
     ESP_LOGI(TAG, "");
     ESP_LOGI(TAG, "================================================================================");
     ESP_LOGI(TAG, "=== ANCHOR DRAG PRO - MARINE SAFETY SYSTEM ===");

@@ -466,3 +466,20 @@ void ui_footer_cleanup(lv_obj_t *footer) {
 
     FOOTER_LOG_DEBUG("=== FOOTER CLEANUP: Resources freed ===");
 }
+
+/**
+ * Disable auto-hide timer (footer stays visible permanently)
+ */
+void ui_footer_disable_auto_hide(lv_obj_t *footer) {
+    if (footer == NULL) return;
+
+    ui_footer_data_t *data = (ui_footer_data_t *)lv_obj_get_user_data(footer);
+    if (data == NULL) return;
+
+    if (data->auto_hide_timer != NULL) {
+        lv_timer_pause(data->auto_hide_timer);
+        lv_timer_del(data->auto_hide_timer);
+        data->auto_hide_timer = NULL;
+        FOOTER_LOG_EVENT("Auto-hide disabled - footer will stay visible permanently");
+    }
+}

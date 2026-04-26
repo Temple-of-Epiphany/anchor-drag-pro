@@ -101,6 +101,12 @@ void ui_footer_reset_timer(lv_obj_t *footer);
 void ui_footer_cleanup(lv_obj_t *footer);
 
 /**
+ * Disable auto-hide timer (footer stays visible permanently)
+ * @param footer Footer object
+ */
+void ui_footer_disable_auto_hide(lv_obj_t *footer);
+
+/**
  * Enable or disable debug logging
  * @param enable true to enable, false to disable
  */

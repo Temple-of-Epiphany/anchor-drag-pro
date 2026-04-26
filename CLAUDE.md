@@ -142,37 +142,62 @@ See `docs/ESP32-S3-Touch-LCD-4.3B-BOX-KNOWLEDGE.md` for complete pin mapping.
 
 ## File Organization
 
+**As of 2026-04-25, the repository was reorganized to a platform-segregated layout (per Workstream 0 prereq #48).** ESP-IDF specific code lives under `platform/esp32/`. The portable C library lives at `core/`. Future iOS / Android implementations get their own `platform/*` subdirectories.
+
 ```
 /
-├── main/                  # Main application
-│   ├── main.c            # Entry point, app_main()
-│   └── CMakeLists.txt    # Component build
-├── components/           # Custom components (future)
-├── docs/                 # Documentation
+├── core/                            # NEW — portable C library (Workstream 1, currently scaffold only)
+│   ├── include/                     # public headers (anchor_geo.h, anchor_state.h, etc.)
+│   ├── src/                         # implementation
+│   ├── tests/                       # host-side unit tests (CMake/CTest)
+│   └── README.md
+├── platform/                        # NEW — per-platform implementations
+│   ├── esp32/                       # MOVED FROM root — ESP-IDF firmware
+│   │   ├── main/                    # ESP-IDF app root (was /main/)
+│   │   │   ├── main.c               # Entry point, app_main()
+│   │   │   └── CMakeLists.txt       # Component build
+│   │   ├── CMakeLists.txt           # ESP-IDF project CMake (was /CMakeLists.txt)
+│   │   ├── lv_conf.h                # LVGL config (was /lv_conf.h)
+│   │   ├── partitions.csv           # was /partitions.csv
+│   │   ├── sdkconfig                # was /sdkconfig
+│   │   └── sdkconfig.defaults       # was /sdkconfig.defaults
+│   ├── ios/                         # NEW — iOS app (Workstream 2, empty placeholder)
+│   └── android/                     # NEW — Android app (v0.4+, empty placeholder)
+├── brands/                          # NEW — OEM brand abstraction (Workstream 0 prereq #46, empty placeholder)
+│   ├── default/
+│   └── oem-template/
+├── tokens/                          # NEW — design tokens (Workstream 0 prereq #45, empty placeholder)
+├── docs/                            # KEEP at root — cross-cutting documentation
+│   ├── sensor-selection.md          # NEW — IMU/GPS sensor selection rationale
 │   ├── ESP32_S3_HARDWARE_CONFIG.md  # **Critical** hardware config guide
-│   ├── Adding_Custom_Fonts.md
-│   ├── Font_Converter_Setup.md
-│   ├── convert_image_to_lvgl_specification.md
-│   ├── Waveshare_ESP32-S3-Touch-LCD-4.3B_Summary.md
-│   ├── ESP32-S3-Touch-LCD-4.3B-BOX-KNOWLEDGE.md
-│   ├── BOM_Anchor_Alarm.md
-│   ├── Wiring_Guide.md
-│   ├── UI_Screens.md
-│   ├── Screw_Terminal_Connections.md
-│   ├── anchoring_mode_specification.md
-│   ├── nmea2000_pgn_anchor_alarm_table.md
-│   ├── garmin_nmea2000_pgn_reference.md
-│   ├── wind_drift_ui_logic.md
-│   ├── LVGL_Simulator_Guide.md
-│   └── OUTSTANDING_ISSUES.md
-├── assets/               # UI resources (images, fonts)
-├── backups/              # Backup files
-├── build/                # Build output (gitignored)
-├── CMakeLists.txt        # Project CMake
-├── sdkconfig             # ESP-IDF configuration
-├── sdkconfig.defaults    # Default config values
-└── README.md             # Project overview
+│   └── (other reference docs)
+├── assets/                          # KEEP at root — UI source assets
+├── backups/                         # KEEP at root — backup files
+├── scripts/                         # KEEP at root — helper scripts (font conversion, etc.)
+├── build/                           # gitignored
+├── CLAUDE.md
+└── README.md
 ```
+
+### ESP-IDF build commands — invoke from `platform/esp32/`
+
+```bash
+cd platform/esp32
+. $IDF_PATH/export.sh
+idf.py build
+idf.py -p /dev/ttyUSB0 flash monitor
+```
+
+The project root is no longer the ESP-IDF project root. ESP-IDF tools must be invoked from `platform/esp32/` where `CMakeLists.txt` now lives.
+
+### Cross-cutting design specs
+
+The Anchor Drag Pro family has shared design documentation in the meta-repo: https://github.com/Temple-of-Epiphany/anchor-drag-pro-meta/tree/main/docs
+
+- `glossary.md` — canonical terminology
+- `state-spec.md` — state machine spec
+- `design-tokens.md` — color tokens
+- `adaptive-layout.md` — canvas system + rotation rules
 
 ## Important Implementation Details
 
