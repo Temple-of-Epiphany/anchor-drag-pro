@@ -1,8 +1,10 @@
-# Phase 0 minimal main component.
-# Add SRCS / INCLUDE_DIRS / REQUIRES as features land in subsequent phases.
+# Phase 2A — main component with I2C bus support.
+# Add SRCS / REQUIRES as more features land.
 
 idf_component_register(
-    SRCS "main.c"
+    SRCS
+        "main.c"
+        "i2c_bus.c"
     INCLUDE_DIRS "."
     REQUIRES
         # core IDF
@@ -11,4 +13,7 @@ idf_component_register(
         log
         freertos
         spi_flash
+
+        # peripherals
+        driver
 )
