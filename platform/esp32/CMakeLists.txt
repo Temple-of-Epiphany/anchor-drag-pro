@@ -1,15 +1,15 @@
-# Anchor Drag Pro - ESP-IDF Project
-# Author: Colin Bitterfield
-# Email: colin@bitterfield.com
-# Date Created: 2025-12-19
-# Date Updated: 2025-12-19
+# Anchor Drag Pro — ESP-IDF project root
+#
+# This is the v0.2 minimal scaffold. LVGL, drivers, and components are added
+# back as features land per the project board (Workstreams 0-10).
+#
+# For the v0.1 build with LVGL pre-configured, see git tag v0.1.0-archive.
+#
+# Author:  Colin Bitterfield <colin@bitterfield.com>
+# License: Proprietary
 
 cmake_minimum_required(VERSION 3.16)
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
-
-# LVGL configuration - must be after include but before project()
-set(LV_CONF_PATH "${CMAKE_CURRENT_SOURCE_DIR}/lv_conf.h" CACHE STRING "" FORCE)
-idf_build_set_property(COMPILE_OPTIONS "-DLV_CONF_INCLUDE_SIMPLE=1" APPEND)
 
 project(anchor-drag-pro)
