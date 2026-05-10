@@ -1,0 +1,345 @@
+# =============================================================================
+# Anchor Drag Pro — Configuration
+# =============================================================================
+#
+# This file lives at /anchor/config.toml on the SD card.
+#
+# Edit on a computer (any text editor), copy back to the SD card, insert into
+# the device. Changes apply on next boot OR when the SD card is reinserted
+# (hot-reload).
+#
+# Invalid values are NOT fatal — the device falls back to firmware defaults
+# and shows a warning banner on the touchscreen + web UI. The device always
+# boots, even with a corrupt config.
+#
+# For complete schema documentation, see:
+#   https://github.com/Temple-of-Epiphany/anchor-drag-pro/blob/master/docs/config-schema.md
+# =============================================================================
+
+
+# -----------------------------------------------------------------------------
+# Device identity
+# -----------------------------------------------------------------------------
+[device]
+
+# Boat name. Free text. Displayed in web UI title bar.
+name = "Hylas 51"
+
+# Display unit family. Affects how distances and depths are shown to the
+# customer. Internal calculations always use meters.
+#   true  = metric — values shown in meters
+#   false = not metric — values shown in feet
+metric = false
+
+
+# -----------------------------------------------------------------------------
+# Display (touchscreen)
+# -----------------------------------------------------------------------------
+[display]
+
+# Mount orientation, in degrees clockwise from the panel's natural orientation.
+# Use this when the device is installed sideways or upside-down.
+#   0   = natural landscape (default for the WaveShare 4.3B)
+#   90  = rotated clockwise (panel mounted vertically with USB at top)
+#   180 = upside-down (overhead / hardtop mount)
+#   270 = rotated counter-clockwise
+rotation = 0
+
+# Backlight brightness 0-100 percent. Applied at boot.
+brightness = 80
+
+
+# -----------------------------------------------------------------------------
+# Anchor alarm settings
+# -----------------------------------------------------------------------------
+[anchor]
+
+# The currently-selected alarm distance. MUST be one of the three values in
+# [anchor.options].distances below. Locked while the alarm is armed —
+# customer cannot change mid-watch.
+alarm_distance = "50ft"
+
+# Time spent collecting GPS samples to compute the anchor center (centroid)
+# during ARMING. Range 30-300 seconds. Longer = more accurate center but
+# longer wait before the alarm is monitoring.
+arming_seconds = 60
+
+# Audible alarm volume.
+#   "low"    — quiet (cabin use)
+#   "medium" — default
+#   "high"   — loud (cockpit / outdoor)
+sound_volume = "medium"
+
+
+# Distance preset menu shown on the touchscreen.
+#
+# Exactly THREE values, all using the same unit (all "ft" OR all "m").
+# Each value must be between approximately 5 ft and 500 ft (1.5 m to 152 m).
+# Bare numbers are rejected — every value must include its unit.
+#
+# Examples:
+#   distances = ["25ft", "50ft", "100ft"]    # standard cruising
+#   distances = ["10ft", "25ft", "50ft"]     # tight anchorages / lunch hooks
+#   distances = ["50ft", "100ft", "200ft"]   # deep water / heavy weather
+#   distances = ["10m", "20m", "30m"]        # metric standard
+[anchor.options]
+distances = ["25ft", "50ft", "100ft"]
+
+
+# =============================================================================
+# GPS — three input transports, configurable independently
+# =============================================================================
+#
+# The device can receive GPS data from up to three physical sources:
+#   - N2K     (NMEA 2000 over the boat's CAN bus — most common)
+#   - Serial  (RS485 — wired NMEA 0183 GPS receiver)
+#   - URL     (TCP/IP to a network gateway like Yacht Devices)
+#   - Internal (built-in u-blox — IMU/GPS variant only)
+#
+# Multiple sources can be enabled simultaneously. The source_priority list
+# determines which one wins when more than one has a valid recent fix.
+# =============================================================================
+[gps]
+
+# Order of preference. First in the list with a recent fix wins. Sources
+# not listed are not consulted. Remove sources you don't have to make logs
+# cleaner.
+source_priority = ["n2k", "url", "serial", "internal"]
+
+# A fix older than this many seconds is considered stale; the source manager
+# falls back to the next priority.
+freshness_seconds = 5
+
+
+# -----------------------------------------------------------------------------
+# GPS source: NMEA 2000 (CAN bus)
+# -----------------------------------------------------------------------------
+#
+# Most boats with N2K have multiple devices that broadcast GPS PGNs:
+# the chartplotter's internal GPS, the AIS unit's GPS, dedicated GPS
+# antennas, sounders, etc. You must pick ONE source explicitly to avoid
+# the algorithm seeing competing fixes.
+#
+# To pick: leave source_address = 0xff for first-boot auto-detect, then
+# go to the web UI Sources page (or use the CLI `n2k devices` command)
+# to see what's on your bus and pick the right one.
+#
+# Source addresses are stable per boat (each N2K device claims its
+# address at boot) — once set, the value persists.
+# -----------------------------------------------------------------------------
+[gps.n2k]
+enabled = true
+
+# N2K source address (0-255). 0xff means "auto-detect first available."
+# After picking via web UI, this gets set to a specific value, e.g. 0x07.
+source_address = 0xff
+
+# Optional fallback. If the primary source goes silent, the device uses
+# this one instead. Set to 0xff to disable fallback.
+fallback_address = 0xff
+
+
+# -----------------------------------------------------------------------------
+# GPS source: RS485 / serial
+# -----------------------------------------------------------------------------
+#
+# A wired serial GPS connected directly to the device's RS485 lines.
+# Common for older boats with a dedicated NMEA 0183 GPS antenna.
+#
+# Wiring: GPIO43 (RX) and GPIO44 (TX) on the WaveShare 4.3B board.
+# -----------------------------------------------------------------------------
+[gps.serial]
+enabled = false
+
+# Wire protocol the connected GPS speaks.
+#   "nmea0183"   — most common; ASCII sentences (GGA, RMC, VTG)
+#   "ublox_ubx"  — u-blox binary protocol (more accurate if your GPS supports it)
+protocol = "nmea0183"
+
+# Baud rate. NMEA 0183 standard is 4800. Some modern receivers support
+# higher rates for better update frequency.
+#   Common values: 4800, 9600, 38400, 115200
+baud = 4800
+
+
+# -----------------------------------------------------------------------------
+# GPS source: URL (network gateway)
+# -----------------------------------------------------------------------------
+#
+# Get GPS via a network gateway over WiFi or Ethernet. The gateway is a
+# separate device that bridges your N2K bus to a TCP connection.
+#
+# Supported gateways:
+#   Yacht Devices YDWG-02 (WiFi) — set its mode to RAW
+#   Yacht Devices YDEN-02 (Ethernet) — set its mode to RAW
+#
+# Other gateways (Actisense, etc.) may work with protocol = "nmea0183" if
+# they're configured to output NMEA 0183 over TCP.
+# -----------------------------------------------------------------------------
+[gps.url]
+enabled = false
+
+# tcp://host:port  (mDNS support planned for future)
+url = "tcp://192.168.1.100:1457"
+
+# Wire format the gateway emits.
+#   "yd_raw"    — Yacht Devices RAW format (text-encoded N2K frames)
+#   "nmea0183"  — ASCII NMEA 0183 sentences over TCP
+protocol = "yd_raw"
+
+# Reconnect delay after disconnect. Exponential backoff caps at 60 seconds.
+reconnect_seconds = 10
+
+
+# -----------------------------------------------------------------------------
+# GPS source: internal (built-in u-blox)
+# -----------------------------------------------------------------------------
+#
+# Only present on the IMU/GPS variant. Display variant ignores this section.
+# Auto-detected at boot from the PRODUCT_VARIANT compile flag.
+# -----------------------------------------------------------------------------
+[gps.internal]
+enabled = false
+
+
+# =============================================================================
+# IMU — heading / attitude / rate-of-turn
+# =============================================================================
+#
+# IMU data lets the algorithm distinguish boat SWING (innocent rotation
+# around the anchor on wind shift) from boat DRAG (anchor failure). Without
+# IMU data, the algorithm has more false alarms during wind shifts.
+#
+# Same three-source structure as GPS. Many boats already have a heading
+# source on the N2K bus (CCU, fluxgate compass, autopilot processor) —
+# use that. The internal IMU is for boats without one.
+# =============================================================================
+[imu]
+
+source_priority = ["n2k", "internal", "serial"]
+
+# Stale threshold. Shorter than GPS because heading staleness matters more
+# for swing-vs-drag discrimination.
+freshness_seconds = 2
+
+
+# -----------------------------------------------------------------------------
+# IMU source: NMEA 2000 (most common)
+# -----------------------------------------------------------------------------
+#
+# Reads PGN 127250 (Vessel Heading), 127251 (Rate of Turn), 127257 (Attitude).
+#
+# Same source-address selection as GPS — pick which N2K heading source
+# to use if your bus has more than one.
+# -----------------------------------------------------------------------------
+[imu.n2k]
+enabled = true
+source_address = 0xff
+fallback_address = 0xff
+
+
+# -----------------------------------------------------------------------------
+# IMU source: RS485 / serial
+# -----------------------------------------------------------------------------
+#
+# Wired IMU sensor on the RS485 bus. Currently supported: WitMotion HWT901B
+# (9-axis with RM3100 magnetometer, MODBUS protocol).
+# -----------------------------------------------------------------------------
+[imu.serial]
+enabled = false
+protocol = "witmotion_modbus"
+baud = 115200
+
+
+# -----------------------------------------------------------------------------
+# IMU source: internal (built-in)
+# -----------------------------------------------------------------------------
+#
+# IMU/GPS variant only. Specific chip is auto-detected via I²C scan.
+# -----------------------------------------------------------------------------
+[imu.internal]
+enabled = false
+chip = "auto"   # "auto" | "bno085" | "hwt901b_i2c"
+
+
+# =============================================================================
+# WiFi
+# =============================================================================
+[wifi]
+
+# Mode of operation:
+#   "ap"  = device runs its own access point (default — connect with phone for setup)
+#   "sta" = device joins your boat's WiFi network
+#   "off" = WiFi disabled (saves power, no web UI access)
+mode = "ap"
+
+[wifi.ap]
+# SSID prefix. Device serial number is appended (e.g., "AnchorAlarm-A1B2").
+ssid_prefix = "AnchorAlarm"
+# Empty = use the auto-generated WPA2 password printed on the device label.
+password = ""
+
+[wifi.sta]
+# Used when mode = "sta". Joined network credentials.
+ssid = ""
+password = ""
+
+
+# =============================================================================
+# N2K transmission (IMU/GPS variant only)
+# =============================================================================
+#
+# When enabled, the device acts as an N2K transmitter, sending heading
+# and attitude PGNs from the internal IMU onto the bus. This makes the
+# device function as a heading source for the rest of the boat — your
+# chartplotter, autopilot, AIS, and other instruments can use it.
+#
+# Display variant ignores this section entirely. The Display variant's
+# CAN bus is hardware-locked to LISTEN_ONLY mode for safety.
+#
+# Requires: PRODUCT_VARIANT=IMU_GPS at compile time, plus internal IMU
+# enabled and calibrated.
+# =============================================================================
+[n2k_transmit]
+enabled = false
+
+# Transmission cadence per PGN, in Hz.
+heading_hz = 10
+attitude_hz = 5
+rate_of_turn_hz = 10
+
+
+# =============================================================================
+# N2K data logger (writes received PGNs to SD)
+# =============================================================================
+[logger]
+enabled = false
+
+# Log file format on disk:
+#   "yd_raw"     — Yacht Devices text format (human-inspectable)
+#   "actisense"  — Actisense binary (compatible with chartplotter analysis tools)
+format = "yd_raw"
+
+# How often to start a new log file:
+#   "hourly"     — new file every hour
+#   "daily"      — new file every midnight
+#   "size:8MB"   — new file when current reaches 8 MB
+rotation = "hourly"
+
+# Which PGNs to log:
+#   "default"    — curated list (GPS, wind, depth, heading, engine, battery)
+#   "all"        — log everything (high SD wear; debug only)
+#   [129029, 130306, 128267]  — explicit list
+pgns = "default"
+
+# Stop logging when SD free space drops below this percentage. The anchor
+# alarm continues to function even when logging is suspended.
+min_free_pct = 5
+
+
+# =============================================================================
+# Locale (reserved for future use)
+# =============================================================================
+[locale]
+language = "en"
+timezone = "America/Los_Angeles"
