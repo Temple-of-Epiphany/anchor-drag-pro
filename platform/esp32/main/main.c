@@ -30,11 +30,13 @@
 #include "freertos/task.h"
 #include "sdkconfig.h"
 
+#include "nvs_flash.h"
 #include "board_config.h"
 #include "i2c_bus.h"
 #include "ch422g.h"
 #include "sd_card.h"
 #include "ota.h"
+#include "anchor_config.h"
 
 static const char *TAG = "anchor_drag_pro";
 
@@ -94,6 +96,16 @@ void app_main(void)
 {
     log_chip_info();
 
+    /* NVS — required by anchor_config (cache layer) and other future
+     * subsystems. Initialize once early; ignore "not erased" / "new
+     * version" errors that normally just mean we should erase + re-init. */
+    esp_err_t nvs_err = nvs_flash_init();
+    if (nvs_err == ESP_ERR_NVS_NO_FREE_PAGES || nvs_err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        ESP_LOGW(TAG, "NVS needs erase (%s) — erasing and re-init", esp_err_to_name(nvs_err));
+        nvs_flash_erase();
+        nvs_flash_init();
+    }
+
     /* Phase 2D self-test: if we just OTA'd, run a brief self-test then
      * mark-valid. If the previous boot was already VALID this is a no-op. */
     ota_handle_pending_verify();
@@ -126,6 +138,13 @@ void app_main(void)
     /* If a newer firmware is on /sdcard/firmware/, prompt + flash + reboot.
      * On no-update / decline / error, returns and continues boot. */
     ota_check_and_apply_from_sd();
+
+    ESP_LOGI(TAG, "--- Phase 3: load configuration ---");
+    /* Three-tier load: SD config.toml -> NVS cache -> built-in defaults.
+     * Always returns OK; device must always boot with some config. */
+    static anchor_config_t g_config;
+    anchor_config_load(&g_config);
+    anchor_config_log(&g_config);
 
     ESP_LOGI(TAG, "--- Boot complete — heartbeat every 10s ---");
 

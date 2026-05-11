@@ -1,0 +1,138 @@
+/*
+ * Anchor Drag Pro — configuration model and loader.
+ *
+ * Three-tier resolution at boot:
+ *   1. /sdcard/anchor/config.toml  (primary)
+ *   2. NVS cache                   (last-known-good)
+ *   3. Built-in defaults           (compiled in)
+ *
+ * Each layer fills fields the layer above didn't provide. Invalid values
+ * in the config file are NOT fatal — the field falls back to the next
+ * layer and a warning is recorded.
+ *
+ * See docs/config-schema.md for the canonical TOML schema.
+ *
+ * NOTE: this header is intentionally written in pure C99 with no ESP-IDF
+ * dependencies in the struct/value layer — only the load/save I/O
+ * functions are platform-specific. When Workstream 1 (core extraction)
+ * lands, the type definitions and validation helpers move to core/ and
+ * only the I/O glue stays here.
+ *
+ * Author:  Colin Bitterfield <colin@bitterfield.com>
+ * License: Proprietary
+ */
+
+#pragma once
+
+#include "esp_err.h"
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/* ---- Common types -------------------------------------------------- */
+
+typedef enum {
+    UNIT_FT = 0,
+    UNIT_M  = 1,
+} anchor_unit_t;
+
+/*
+ * Distance value carrying both its display unit and the canonical meters.
+ * Math in firmware operates on .meters; display uses .value + .unit.
+ */
+typedef struct {
+    double         value;     /* in original unit, rounded to 1 decimal */
+    anchor_unit_t  unit;
+    double         meters;    /* canonical, computed at parse */
+} anchor_distance_t;
+
+typedef enum {
+    SOUND_LOW    = 0,
+    SOUND_MEDIUM = 1,
+    SOUND_HIGH   = 2,
+} anchor_sound_volume_t;
+
+typedef enum {
+    WIFI_OFF = 0,
+    WIFI_AP  = 1,
+    WIFI_STA = 2,
+} anchor_wifi_mode_t;
+
+/* ---- Per-section configs ------------------------------------------- */
+
+typedef struct {
+    char name[64];          /* free text, e.g. "Hylas 51" */
+    bool metric;            /* true = meters / false = feet (customer-facing) */
+} anchor_device_cfg_t;
+
+typedef struct {
+    int rotation;           /* 0 / 90 / 180 / 270 */
+    int brightness;         /* 0..100 */
+} anchor_display_cfg_t;
+
+typedef struct {
+    /* Three preset distances customer cycles through on the touchscreen.
+     * All entries must use the same unit. Each within 1.5 m .. 152 m. */
+    anchor_distance_t      options[3];
+    int                    selected_idx;    /* 0..2 */
+    int                    arming_seconds;  /* 30..300 */
+    anchor_sound_volume_t  sound_volume;
+} anchor_anchor_cfg_t;
+
+typedef struct {
+    anchor_wifi_mode_t mode;
+    char ap_ssid_prefix[32];
+    char ap_password[64];
+    char sta_ssid[32];
+    char sta_password[64];
+} anchor_wifi_cfg_t;
+
+/* ---- Top-level config ---------------------------------------------- */
+
+typedef struct {
+    anchor_device_cfg_t  device;
+    anchor_display_cfg_t display;
+    anchor_anchor_cfg_t  anchor;
+    anchor_wifi_cfg_t    wifi;
+} anchor_config_t;
+
+/* ---- Public API ---------------------------------------------------- */
+
+/* Fill `out` with built-in firmware defaults. Pure function, no I/O. */
+void anchor_config_defaults(anchor_config_t *out);
+
+/*
+ * Parse a TOML string into `out`. Starting state for `out` is preserved —
+ * any unset fields keep their existing values (call anchor_config_defaults
+ * first, then this, to merge layers correctly).
+ *
+ * `errbuf` receives a human-readable description of any validation issues.
+ * Multiple warnings concatenate with newlines. Returns ESP_OK on success
+ * (even if some fields were rejected — see errbuf), ESP_FAIL on TOML
+ * parse failure.
+ */
+esp_err_t anchor_config_parse_string(const char *toml_text,
+                                      anchor_config_t *out,
+                                      char *errbuf, size_t errbufsz);
+
+/*
+ * Full three-tier load:
+ *   1. anchor_config_defaults(out)
+ *   2. parse /sdcard/anchor/config.toml if present
+ *   3. fall back to NVS cache for any tier-1 failures
+ *
+ * Logs progress via ESP_LOGI/ESP_LOGW. Always returns ESP_OK — the
+ * device must always boot with *some* config.
+ */
+esp_err_t anchor_config_load(anchor_config_t *out);
+
+/* Print the loaded config to the serial console for diagnostics. */
+void anchor_config_log(const anchor_config_t *cfg);
+
+#ifdef __cplusplus
+}
+#endif
