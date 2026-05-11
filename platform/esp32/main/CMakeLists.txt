@@ -1,4 +1,4 @@
-# Phase 2C — adds SD card driver alongside i2c_bus and ch422g.
+# Phase 2D — adds OTA module alongside i2c_bus, ch422g, sd_card.
 
 idf_component_register(
     SRCS
@@ -6,6 +6,7 @@ idf_component_register(
         "i2c_bus.c"
         "ch422g.c"
         "sd_card.c"
+        "ota.c"
     INCLUDE_DIRS "."
     REQUIRES
         # core IDF
@@ -19,8 +20,13 @@ idf_component_register(
         # peripherals
         driver
 
-        # SD card stack (built-in components, NOT managed)
+        # SD card stack
         fatfs
         sdmmc
         esp_driver_sdmmc
+
+        # OTA
+        app_update
+        esp_partition
+        mbedtls
 )

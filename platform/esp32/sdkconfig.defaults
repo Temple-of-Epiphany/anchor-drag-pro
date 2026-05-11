@@ -47,3 +47,9 @@ CONFIG_PARTITION_TABLE_FILENAME="partitions.csv"
 
 # Main task stack size (16KB needed for UI initialization)
 CONFIG_MAIN_TASK_STACK_SIZE=16384
+
+# OTA with auto-rollback (Phase 2D — Workstream 8)
+# New firmware boots in PENDING_VERIFY state. App must call
+# esp_ota_mark_app_valid_cancel_rollback() after a self-test;
+# otherwise the bootloader reverts to the previous partition.
+CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y

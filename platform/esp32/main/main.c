@@ -1,14 +1,17 @@
 /*
  * Anchor Drag Pro — ESP32 firmware
- * v0.2 clean rebuild — Phase 2C (SD card driver).
+ * v0.2 clean rebuild — Phase 2D (OTA from SD).
  *
  * Boot sequence:
  *   1. Log chip info
- *   2. Bring up I2C0 + scan for devices
- *   3. Init CH422G I/O expander (smoke test: blink backlight)
- *   4. Init SD card (assert CS via CH422G, mount FAT)
- *   5. If SD mounted, log card info + free space
- *   6. Heartbeat every 10s
+ *   2. If running partition is PENDING_VERIFY (just OTA'd), run brief
+ *      self-test then mark-valid (or roll back on failure).
+ *   3. Bring up I2C0 + scan
+ *   4. Init CH422G I/O expander (smoke test: blink backlight)
+ *   5. Init SD card (assert CS via CH422G, mount FAT)
+ *   6. Check /sdcard/firmware/ for a newer .bin + .sha256 — prompt
+ *      user via serial, verify, flash, reboot.
+ *   7. If still running, heartbeat every 10s.
  *
  * For the v0.1 codebase (full 6-screen LVGL implementation), see tag
  * v0.1.0-archive or branch archive/v0.1.
@@ -31,10 +34,11 @@
 #include "i2c_bus.h"
 #include "ch422g.h"
 #include "sd_card.h"
+#include "ota.h"
 
 static const char *TAG = "anchor_drag_pro";
 
-/* Phase 2C: 0.2.0-dev — I2C bus + CH422G + SD card */
+/* Phase 2D: 0.2.0-dev — I2C + CH422G + SD + OTA */
 #define FIRMWARE_VERSION_STRING "0.2.0-dev"
 
 static void log_chip_info(void)
@@ -73,12 +77,9 @@ static void sd_smoke_test(void)
         ESP_LOGW(TAG, "SD smoke test: card not mounted, skipping");
         return;
     }
-
-    /* Print full card info to the serial console. */
     ESP_LOGI(TAG, "SD card info:");
     sd_card_print_info(stdout);
 
-    /* Print free space summary. */
     uint64_t total = 0, free = 0, used = 0;
     if (sd_card_get_usage(&total, &free, &used) == ESP_OK) {
         ESP_LOGI(TAG, "SD usage: total=%llu MB  used=%llu MB  free=%llu MB (%.1f%% free)",
@@ -92,6 +93,11 @@ static void sd_smoke_test(void)
 void app_main(void)
 {
     log_chip_info();
+
+    /* Phase 2D self-test: if we just OTA'd, run a brief self-test then
+     * mark-valid. If the previous boot was already VALID this is a no-op. */
+    ota_handle_pending_verify();
+    ota_log_status();
 
     ESP_LOGI(TAG, "--- Phase 2A: I2C0 bus init ---");
     if (i2c_bus_init(I2C0_SDA_GPIO, I2C0_SCL_GPIO, I2C0_FREQ_HZ) != ESP_OK) {
@@ -115,6 +121,11 @@ void app_main(void)
     } else {
         sd_smoke_test();
     }
+
+    ESP_LOGI(TAG, "--- Phase 2D: OTA check on SD ---");
+    /* If a newer firmware is on /sdcard/firmware/, prompt + flash + reboot.
+     * On no-update / decline / error, returns and continues boot. */
+    ota_check_and_apply_from_sd();
 
     ESP_LOGI(TAG, "--- Boot complete — heartbeat every 10s ---");
 
