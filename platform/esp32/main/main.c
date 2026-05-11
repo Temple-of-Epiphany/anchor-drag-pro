@@ -1,12 +1,14 @@
 /*
  * Anchor Drag Pro — ESP32 firmware
- * v0.2 clean rebuild — Phase 2B (CH422G I/O expander).
+ * v0.2 clean rebuild — Phase 2C (SD card driver).
  *
- * Boot sequence so far:
+ * Boot sequence:
  *   1. Log chip info
  *   2. Bring up I2C0 + scan for devices
- *   3. Init CH422G I/O expander
- *   4. Smoke test: blink backlight twice to confirm CH422G is responding
+ *   3. Init CH422G I/O expander (smoke test: blink backlight)
+ *   4. Init SD card (assert CS via CH422G, mount FAT)
+ *   5. If SD mounted, log card info + free space
+ *   6. Heartbeat every 10s
  *
  * For the v0.1 codebase (full 6-screen LVGL implementation), see tag
  * v0.1.0-archive or branch archive/v0.1.
@@ -16,6 +18,7 @@
  */
 
 #include <stdio.h>
+#include <inttypes.h>
 #include "esp_log.h"
 #include "esp_chip_info.h"
 #include "esp_flash.h"
@@ -27,13 +30,11 @@
 #include "board_config.h"
 #include "i2c_bus.h"
 #include "ch422g.h"
+#include "sd_card.h"
 
 static const char *TAG = "anchor_drag_pro";
 
-/*
- * Firmware version. Manual bump per release.
- * Phase 2B: 0.2.0-dev — I2C bus + CH422G driver
- */
+/* Phase 2C: 0.2.0-dev — I2C bus + CH422G + SD card */
 #define FIRMWARE_VERSION_STRING "0.2.0-dev"
 
 static void log_chip_info(void)
@@ -56,12 +57,6 @@ static void log_chip_info(void)
 
 static void ch422g_smoke_test(void)
 {
-    /*
-     * Blink the LCD backlight twice (off-on-off-on) so we can visually
-     * confirm the I/O expander is talking to the chip. After the test,
-     * leave the backlight OFF — the display driver will turn it on when
-     * it's ready (later phase).
-     */
     ESP_LOGI(TAG, "CH422G smoke test: backlight blink");
     for (int i = 0; i < 2; i++) {
         ch422g_lcd_backlight(true);
@@ -70,6 +65,28 @@ static void ch422g_smoke_test(void)
         vTaskDelay(pdMS_TO_TICKS(150));
     }
     ESP_LOGI(TAG, "CH422G state after test: 0x%02X", ch422g_get_state_cached());
+}
+
+static void sd_smoke_test(void)
+{
+    if (!sd_card_is_mounted()) {
+        ESP_LOGW(TAG, "SD smoke test: card not mounted, skipping");
+        return;
+    }
+
+    /* Print full card info to the serial console. */
+    ESP_LOGI(TAG, "SD card info:");
+    sd_card_print_info(stdout);
+
+    /* Print free space summary. */
+    uint64_t total = 0, free = 0, used = 0;
+    if (sd_card_get_usage(&total, &free, &used) == ESP_OK) {
+        ESP_LOGI(TAG, "SD usage: total=%llu MB  used=%llu MB  free=%llu MB (%.1f%% free)",
+                 total / (1024ULL * 1024ULL),
+                 used  / (1024ULL * 1024ULL),
+                 free  / (1024ULL * 1024ULL),
+                 total > 0 ? 100.0 * (double) free / (double) total : 0.0);
+    }
 }
 
 void app_main(void)
@@ -85,10 +102,18 @@ void app_main(void)
 
     ESP_LOGI(TAG, "--- Phase 2B: CH422G I/O expander init ---");
     if (ch422g_init() != ESP_OK) {
-        ESP_LOGE(TAG, "ch422g_init failed; subsequent peripherals (display, SD) "
-                      "will not work");
+        ESP_LOGE(TAG, "ch422g_init failed; SD and display will be unavailable");
     } else {
         ch422g_smoke_test();
+    }
+
+    ESP_LOGI(TAG, "--- Phase 2C: SD card init ---");
+    esp_err_t sd_err = sd_card_init();
+    if (sd_err != ESP_OK) {
+        ESP_LOGW(TAG, "sd_card_init failed: %s — proceeding without SD",
+                 esp_err_to_name(sd_err));
+    } else {
+        sd_smoke_test();
     }
 
     ESP_LOGI(TAG, "--- Boot complete — heartbeat every 10s ---");

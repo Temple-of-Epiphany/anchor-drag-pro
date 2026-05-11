@@ -1,22 +1,10 @@
 # Managed component dependencies for the ESP-IDF firmware.
-#
-# We add components as phases land. See docs/library-choices.md for the
-# canonical library set and rationale.
-#
-# Pinning rules:
-#   ~1.0  = >=1.0, <1.1 (patch updates only)
-#   ^1    = >=1, <2 (minor updates allowed)
-#
-# Check the Espressif Component Registry first before adding anything new:
-#   https://components.espressif.com/
+# See docs/library-choices.md for the canonical library set and rationale.
 
 dependencies:
   idf:
     version: ">=5.1.0"
 
-  # Phase 2B (next): CH422G I/O expander
-  # espressif/esp_io_expander_ch422g: "~1.0"
-
-  # Phase 5+ (graphics): touch + LVGL
+  # Phase 5+ (graphics): touch + LVGL — uncomment when graphics phase begins
   # espressif/esp_lcd_touch_gt911: "^1"
   # lvgl/lvgl: "~8.3"
