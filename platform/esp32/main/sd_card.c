@@ -34,20 +34,23 @@ static sdmmc_host_t  s_host     = SDSPI_HOST_DEFAULT();
 /* ---- Watchdog helpers ----
  * Some SD operations (mount, format, large writes) take far longer than
  * the default task WDT timeout. We disable for the duration and re-enable.
- * Functions are no-op if the current task is not registered with WDT.
+ * Critical: only re-add if the task was actually being tracked — otherwise
+ * we'd start tracking app_main (which lives in a long vTaskDelay heartbeat
+ * loop) and trip the WDT every 5 seconds.
  */
-static void wdt_pause(void)
+static bool wdt_pause(void)
 {
     TaskHandle_t self = xTaskGetCurrentTaskHandle();
-    /* esp_task_wdt_delete returns ESP_ERR_NOT_FOUND if the task isn't
-     * tracked — that's normal at boot, not an error. */
-    esp_task_wdt_delete(self);
+    /* delete returns ESP_OK if the task was tracked, ESP_ERR_NOT_FOUND
+     * if it wasn't — common at boot when app_main hasn't been registered. */
+    return esp_task_wdt_delete(self) == ESP_OK;
 }
 
-static void wdt_resume(void)
+static void wdt_resume(bool was_tracked)
 {
-    TaskHandle_t self = xTaskGetCurrentTaskHandle();
-    esp_task_wdt_add(self);
+    if (was_tracked) {
+        esp_task_wdt_add(xTaskGetCurrentTaskHandle());
+    }
 }
 
 esp_err_t sd_card_init(void)
@@ -102,10 +105,10 @@ esp_err_t sd_card_init(void)
 
     s_host.slot = SD_SPI_HOST;
 
-    wdt_pause();
+    bool wdt_was = wdt_pause();
     err = esp_vfs_fat_sdspi_mount(SD_MOUNT_POINT, &s_host, &slot_cfg,
                                     &mount_cfg, &s_card);
-    wdt_resume();
+    wdt_resume(wdt_was);
 
     if (err != ESP_OK) {
         if (err == ESP_FAIL) {
@@ -165,10 +168,10 @@ size_t sd_safe_write(const void *buf, size_t size, size_t count,
         return 0;
     }
 
-    wdt_pause();
+    bool wdt_was = wdt_pause();
     size_t n = fwrite(buf, size, count, fp);
     int saved_errno = errno;
-    wdt_resume();
+    wdt_resume(wdt_was);
 
     if (n != count && err_out) {
         *err_out = saved_errno;
@@ -184,9 +187,9 @@ int sd_safe_sync(FILE *fp)
 
     /* Flush stdio buffers first, then fsync to push to the card. */
     fflush(fp);
-    wdt_pause();
+    bool wdt_was = wdt_pause();
     int rc = fsync(fd);
-    wdt_resume();
+    wdt_resume(wdt_was);
     return rc;
 }
 
@@ -194,9 +197,9 @@ esp_err_t sd_card_deinit(void)
 {
     if (!s_mounted) return ESP_OK;
 
-    wdt_pause();
+    bool wdt_was = wdt_pause();
     esp_err_t err = esp_vfs_fat_sdcard_unmount(SD_MOUNT_POINT, s_card);
-    wdt_resume();
+    wdt_resume(wdt_was);
 
     /* Best-effort regardless of unmount status. */
     spi_bus_free(SD_SPI_HOST);
