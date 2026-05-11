@@ -1,10 +1,10 @@
-# Phase 2A — main component with I2C bus support.
-# Add SRCS / REQUIRES as more features land.
+# Phase 2B — adds CH422G driver alongside i2c_bus.
 
 idf_component_register(
     SRCS
         "main.c"
         "i2c_bus.c"
+        "ch422g.c"
     INCLUDE_DIRS "."
     REQUIRES
         # core IDF
