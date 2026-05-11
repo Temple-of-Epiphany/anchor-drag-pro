@@ -41,8 +41,13 @@ static sdmmc_host_t  s_host     = SDSPI_HOST_DEFAULT();
 static bool wdt_pause(void)
 {
     TaskHandle_t self = xTaskGetCurrentTaskHandle();
-    /* delete returns ESP_OK if the task was tracked, ESP_ERR_NOT_FOUND
-     * if it wasn't — common at boot when app_main hasn't been registered. */
+    /* Check membership first — esp_task_wdt_delete logs an info-level
+     * "delete_entry: task not found" line when called on an untracked
+     * task, which clutters every SD operation at boot. esp_task_wdt_status
+     * returns ESP_OK only if tracked; otherwise we skip the delete. */
+    if (esp_task_wdt_status(self) != ESP_OK) {
+        return false;
+    }
     return esp_task_wdt_delete(self) == ESP_OK;
 }
 

@@ -100,23 +100,54 @@ void i2c_bus_scan(void)
         return;
     }
 
+    /*
+     * The CH422G I/O expander aliases across its register-as-address
+     * scheme (0x20-0x27 for OD bank, 0x30-0x3F for IO bank). All those
+     * addresses ACK but represent ONE physical chip. We probe everything
+     * but only LOG the canonical addresses to keep the scan output
+     * uncluttered. Unknown addresses outside any known alias range are
+     * still logged because they could be unexpected hardware.
+     */
+    int  ch422g_aliases  = 0;     /* CH422G OD bank 0x20-0x27 + IO bank 0x30-0x3F */
+    bool ch422g_present  = false;
+
     for (uint8_t addr = 0x08; addr <= 0x77; addr++) {
-        if (i2c_master_probe(s_bus, addr, 50) == ESP_OK) {
-            const char *known = "";
-            switch (addr) {
-                case 0x24: known = " (CH422G I/O expander, write addr)"; break;
-                case 0x38: known = " (CH422G I/O expander, alternate)";  break;
-                case 0x4A: known = " (BNO085 / HWT901B IMU)";            break;
-                case 0x4B: known = " (BNO085 alternate)";                break;
-                case 0x51: known = " (PCF85063A RTC)";                   break;
-                case 0x5D: known = " (GT911 touch controller)";          break;
-                default:   known = "";                                   break;
-            }
-            ESP_LOGI(TAG, "  0x%02X%s", addr, known);
-            found++;
+        if (i2c_master_probe(s_bus, addr, 50) != ESP_OK) {
+            continue;
         }
+        found++;
+
+        /* CH422G register-as-address aliases. */
+        bool is_ch422g_alias =
+            (addr >= 0x20 && addr <= 0x27) ||
+            (addr >= 0x30 && addr <= 0x3F);
+
+        if (is_ch422g_alias) {
+            ch422g_aliases++;
+            ch422g_present = true;
+            continue;     /* don't log every alias */
+        }
+
+        const char *known = "";
+        switch (addr) {
+            case 0x4A: known = " (BNO085 / HWT901B IMU)";        break;
+            case 0x4B: known = " (BNO085 alternate)";            break;
+            case 0x51: known = " (PCF85063A RTC)";               break;
+            case 0x5D: known = " (GT911 touch controller)";      break;
+            default:   known = "  (unknown)";                    break;
+        }
+        ESP_LOGI(TAG, "  0x%02X%s", addr, known);
+    }
+
+    if (ch422g_present) {
+        ESP_LOGI(TAG, "  0x24/0x38 (CH422G I/O expander; %d aliases collapsed)",
+                 ch422g_aliases);
     }
 
     i2c_bus_unlock();
-    ESP_LOGI(TAG, "Scan complete: %d device(s) responding", found);
+    ESP_LOGI(TAG, "Scan complete: %d address(es) responding (%s)",
+             found,
+             ch422g_present
+                ? "1 CH422G + the rest unique"
+                : "all unique");
 }
