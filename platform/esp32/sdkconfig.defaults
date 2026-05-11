@@ -53,3 +53,15 @@ CONFIG_MAIN_TASK_STACK_SIZE=16384
 # esp_ota_mark_app_valid_cancel_rollback() after a self-test;
 # otherwise the bootloader reverts to the previous partition.
 CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
+
+# FATFS — long filenames + exFAT (Phase 2C/2D)
+# Default IDF builds disable LFN, which truncates anchor-drag-pro_v*.bin
+# to 8.3 format on the SD card and breaks the OTA filename scanner.
+# LFN_STACK uses ~1 KB stack per file-handling task in exchange for
+# predictable timing (vs LFN_HEAP which malloc/frees per call).
+# exFAT support added so customers can use SD cards >32 GB for
+# extended logging — the cost is ~30 KB code, no licensing fees in IDF.
+CONFIG_FATFS_LFN_STACK=y
+CONFIG_FATFS_MAX_LFN=255
+CONFIG_FATFS_LFN_UNICODE_UTF8=y
+CONFIG_FATFS_LFN_UTF8=y
