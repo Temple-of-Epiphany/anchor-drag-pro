@@ -1,0 +1,135 @@
+name: Release
+
+# Build firmware and publish it as a release on the public
+# anchor-drag-pro-releases repo. Triggered by:
+#   - Pushing a tag matching v* (e.g., v0.2.1, v1.0.0)
+#   - Manual workflow_dispatch with a chosen version + draft flag
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag (e.g. v0.3.0). Required for manual runs.'
+        required: true
+        type: string
+      draft:
+        description: 'Publish as draft (true) or public (false)'
+        required: false
+        default: 'true'
+        type: choice
+        options: ['true', 'false']
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-release:
+    name: Build firmware and publish release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Resolve version
+        id: ver
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VER="${{ github.event.inputs.version }}"
+          else
+            VER="${GITHUB_REF_NAME}"
+          fi
+          # Strip leading 'v' for the bin filename, keep tag-form for release title
+          VER_TAG="${VER}"
+          VER_NUM="${VER#v}"
+          echo "tag=${VER_TAG}"     >> "$GITHUB_OUTPUT"
+          echo "number=${VER_NUM}"  >> "$GITHUB_OUTPUT"
+          echo "Building release for ${VER_TAG} (number ${VER_NUM})"
+
+      - name: Checkout firmware
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Build firmware (ESP-IDF 5.5)
+        uses: espressif/esp-idf-ci-action@8cd22ae10042fadc37890e81e9988a9113e7b506 # v1.1.0
+        with:
+          esp_idf_version: v5.5
+          target: esp32s3
+          path: platform/esp32
+
+      - name: Stage release assets
+        id: stage
+        run: |
+          set -euo pipefail
+          VER_NUM='${{ steps.ver.outputs.number }}'
+          STAGE="$RUNNER_TEMP/release"
+          mkdir -p "$STAGE"
+
+          BIN_SRC=platform/esp32/build/anchor-drag-pro.bin
+          BIN_DST="${STAGE}/anchor-drag-pro_v${VER_NUM}.bin"
+          SHA_DST="${STAGE}/anchor-drag-pro_v${VER_NUM}.sha256"
+          NOTES_DST="${STAGE}/RELEASE_NOTES.md"
+
+          cp "$BIN_SRC" "$BIN_DST"
+
+          # SHA256 sidecar in standard sha256sum format
+          ( cd "$STAGE" && shasum -a 256 "$(basename "$BIN_DST")" > "$SHA_DST" )
+          echo "SHA256: $(cat "$SHA_DST")"
+
+          # Release notes: extract section from CHANGELOG.md if it exists.
+          if [ -f CHANGELOG.md ]; then
+            python3 .github/scripts/extract-changelog.py \
+              --tag "v${VER_NUM}" \
+              --output "$NOTES_DST" \
+              CHANGELOG.md || true
+          fi
+          if [ ! -s "$NOTES_DST" ]; then
+            cat > "$NOTES_DST" <<EOF
+          # Anchor Drag Pro v${VER_NUM}
+
+          Firmware build for the WaveShare ESP32-S3-Touch-LCD-4.3B.
+
+          ## Installation
+
+          1. Download \`anchor-drag-pro_v${VER_NUM}.bin\` and \`anchor-drag-pro_v${VER_NUM}.sha256\` below.
+          2. Copy both files to \`/firmware/\` on the device's SD card.
+          3. Insert the SD card and power on the device.
+          4. Touchscreen (or serial console) prompts to install — type \`y\` to confirm.
+          5. Device verifies the SHA256, flashes, and reboots into the new firmware.
+              On crash or self-test failure, the device automatically reverts to
+              the previous firmware (built-in rollback).
+
+          See https://anchordrag.com/docs/firmware-update for details.
+          EOF
+          fi
+
+          echo "bin=${BIN_DST}"   >> "$GITHUB_OUTPUT"
+          echo "sha=${SHA_DST}"   >> "$GITHUB_OUTPUT"
+          echo "notes=${NOTES_DST}" >> "$GITHUB_OUTPUT"
+          ls -la "$STAGE"
+
+      - name: Publish to anchor-drag-pro-releases
+        uses: softprops/action-gh-release@e7a8f85e1c67a31e6ed99a94b41bd0b71bbee6b8 # v2.0.9
+        with:
+          repository: Temple-of-Epiphany/anchor-drag-pro-releases
+          token: ${{ secrets.RELEASES_REPO_TOKEN }}
+          tag_name: ${{ steps.ver.outputs.tag }}
+          name: Anchor Drag Pro ${{ steps.ver.outputs.tag }}
+          body_path: ${{ steps.stage.outputs.notes }}
+          draft: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.draft == 'true' }}
+          prerelease: false
+          fail_on_unmatched_files: true
+          files: |
+            ${{ steps.stage.outputs.bin }}
+            ${{ steps.stage.outputs.sha }}
+
+      - name: Upload build artifact (debug, 30-day retention)
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: firmware-${{ steps.ver.outputs.tag }}
+          path: |
+            platform/esp32/build/anchor-drag-pro.bin
+            platform/esp32/build/anchor-drag-pro.elf
+            platform/esp32/build/anchor-drag-pro.map
+            platform/esp32/build/partition_table/partition-table.bin
+          retention-days: 30
