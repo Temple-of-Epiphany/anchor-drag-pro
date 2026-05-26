@@ -271,7 +271,7 @@ chip = "auto"   # "auto" | "bno085" | "hwt901b_i2c"
 #   "ap"  = device runs its own access point (default — connect with phone for setup)
 #   "sta" = device joins your boat's WiFi network
 #   "off" = WiFi disabled (saves power, no web UI access)
-mode = "ap"
+mode = "sta"
 
 [wifi.ap]
 # SSID prefix. Device serial number is appended (e.g., "AnchorAlarm-A1B2").
@@ -279,10 +279,18 @@ ssid_prefix = "AnchorAlarm"
 # Empty = use the auto-generated WPA2 password printed on the device label.
 password = ""
 
-[wifi.sta]
-# Used when mode = "sta". Joined network credentials.
-ssid = ""
-password = ""
+# WiFi networks the device will try in STA mode, in priority order.
+# First network the device sees on a scan wins. Maximum 8 entries.
+#
+# Add one [[wifi.networks]] block per network. The double brackets are TOML
+# syntax for an array of tables — the order matters.
+[[wifi.networks]]
+ssid     = "boat-house-wifi"
+password = "yourpassword1"
+
+[[wifi.networks]]
+ssid     = "marina-wifi"
+password = "yourpassword2"
 
 
 # =============================================================================

@@ -41,7 +41,7 @@
 static const char *TAG = "anchor_drag_pro";
 
 /* Phase 2D: 0.2.0-dev — I2C + CH422G + SD + OTA */
-#define FIRMWARE_VERSION_STRING "0.2.0-dev"
+#define FIRMWARE_VERSION_STRING "0.2.4"
 
 static void log_chip_info(void)
 {
@@ -151,7 +151,8 @@ void app_main(void)
     uint32_t tick = 0;
     while (1) {
         vTaskDelay(pdMS_TO_TICKS(10000));
-        ESP_LOGI(TAG, "heartbeat tick=%lu free_heap=%lu",
+        ESP_LOGI(TAG, "heartbeat v%s tick=%lu free_heap=%lu",
+                 FIRMWARE_VERSION_STRING,
                  (unsigned long) ++tick,
                  (unsigned long) esp_get_free_heap_size());
     }

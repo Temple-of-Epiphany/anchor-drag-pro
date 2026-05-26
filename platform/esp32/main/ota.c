@@ -38,7 +38,7 @@ static const char *TAG = "ota";
  * Kept in sync manually until a generated version.h replaces both. */
 #define RUNNING_VERSION_MAJOR   0
 #define RUNNING_VERSION_MINOR   2
-#define RUNNING_VERSION_PATCH   0
+#define RUNNING_VERSION_PATCH   4
 
 /* Self-test that runs after first boot of a new partition. Currently
  * minimal — we don't have much running code yet. As LVGL / GPS / web UI
@@ -488,12 +488,23 @@ esp_err_t ota_check_and_apply_from_sd(void)
         return ESP_OK;
     }
 
-    char answer = prompt_user(&cand.version, PROMPT_TIMEOUT_S);
-    if (answer != 'y') {
-        ESP_LOGI(TAG, "update skipped by user (response: '%c')",
-                 answer ? answer : '?');
-        return ESP_OK;
-    }
+    /*
+     * v0.2 dev: auto-install without prompting.
+     *
+     * The serial-console y/n prompt in prompt_user() requires VFS-routed
+     * stdin from USB-Serial-JTAG, which broke device output entirely
+     * when we tried installing the driver. Until the touchscreen is
+     * available to provide a UI confirmation (Phase 5+), any newer
+     * firmware on SD is installed automatically.
+     *
+     * In production this would be gated by a config flag
+     * (ota.auto_install) or by the touchscreen prompt. For dev, the
+     * customer / developer controls what's on the SD card so auto-install
+     * is safe enough.
+     */
+    ESP_LOGW(TAG, "Auto-installing v%d.%d.%d (no UI confirmation in v0.2 dev — "
+                  "touchscreen prompt returns when graphics phase lands)",
+             cand.version.major, cand.version.minor, cand.version.patch);
 
     err = apply_update(&cand);
     if (err != ESP_OK) {

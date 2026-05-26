@@ -32,6 +32,19 @@ static const char *TAG = "anchor_config";
 #define NVS_KEY_METRIC      "metric"
 #define NVS_KEY_ARM_SEC     "arm_s"
 #define NVS_KEY_DEV_NAME    "dev_name"
+#define NVS_KEY_WIFI_MODE   "wifi_mode"
+#define NVS_KEY_AP_SSID_PFX "ap_ssid_pfx"
+#define NVS_KEY_AP_PASS     "ap_pass"
+#define NVS_KEY_WIFI_BLOB   "wifi_nets"
+
+/* Schema version for the WiFi networks blob — bump on layout change. */
+#define NVS_WIFI_BLOB_VERSION  1
+
+typedef struct {
+    uint32_t              version;
+    int32_t               count;
+    anchor_wifi_network_t networks[ANCHOR_WIFI_MAX_NETWORKS];
+} nvs_wifi_blob_t;
 
 /* ---- Firmware safety bounds ---------------------------------------- */
 
@@ -132,8 +145,7 @@ void anchor_config_defaults(anchor_config_t *out)
     out->wifi.mode = WIFI_AP;
     snprintf(out->wifi.ap_ssid_prefix, sizeof(out->wifi.ap_ssid_prefix), "AnchorAlarm");
     out->wifi.ap_password[0] = '\0';
-    out->wifi.sta_ssid[0]    = '\0';
-    out->wifi.sta_password[0] = '\0';
+    out->wifi.sta_network_count = 0;
 }
 
 /* ---- Parsing each section ----------------------------------------- */
@@ -300,6 +312,33 @@ static void parse_anchor(toml_table_t *t, anchor_config_t *cfg,
     }
 }
 
+static bool append_sta_network(anchor_wifi_cfg_t *wcfg,
+                                const char *ssid, const char *pw,
+                                char *eb, size_t ebsz, int idx_for_errs)
+{
+    if (!ssid || !*ssid) {
+        errbuf_append(eb, ebsz, "wifi.networks[%d] ssid empty; skipping", idx_for_errs);
+        return false;
+    }
+    if (strlen(ssid) > 32) {
+        errbuf_append(eb, ebsz, "wifi.networks[%d] ssid >32 chars; skipping", idx_for_errs);
+        return false;
+    }
+    if (pw && strlen(pw) > 63) {
+        errbuf_append(eb, ebsz, "wifi.networks[%d] password >63 chars; skipping", idx_for_errs);
+        return false;
+    }
+    if (wcfg->sta_network_count >= ANCHOR_WIFI_MAX_NETWORKS) {
+        errbuf_append(eb, ebsz, "wifi.networks[%d] dropped: max %d networks supported",
+                      idx_for_errs, ANCHOR_WIFI_MAX_NETWORKS);
+        return false;
+    }
+    anchor_wifi_network_t *n = &wcfg->sta_networks[wcfg->sta_network_count++];
+    snprintf(n->ssid,     sizeof(n->ssid),     "%s", ssid);
+    snprintf(n->password, sizeof(n->password), "%s", pw ? pw : "");
+    return true;
+}
+
 static void parse_wifi(toml_table_t *t, anchor_config_t *cfg,
                         char *eb, size_t ebsz)
 {
@@ -323,12 +362,37 @@ static void parse_wifi(toml_table_t *t, anchor_config_t *cfg,
         if (p.ok) { snprintf(cfg->wifi.ap_password,    sizeof(cfg->wifi.ap_password),    "%s", p.u.s); free(p.u.s); }
     }
 
+    /* Reset before parsing — SD config is authoritative when present. */
+    cfg->wifi.sta_network_count = 0;
+
+    /* Preferred form: [[wifi.networks]] array of tables. Order is priority. */
+    toml_array_t *nets = toml_array_in(wifi, "networks");
+    if (nets) {
+        int n = toml_array_nelem(nets);
+        for (int i = 0; i < n; i++) {
+            toml_table_t *net = toml_table_at(nets, i);
+            if (!net) continue;
+            toml_datum_t s = toml_string_in(net, "ssid");
+            toml_datum_t p = toml_string_in(net, "password");
+            append_sta_network(&cfg->wifi, s.ok ? s.u.s : NULL, p.ok ? p.u.s : NULL,
+                                eb, ebsz, i);
+            if (s.ok) free(s.u.s);
+            if (p.ok) free(p.u.s);
+        }
+    }
+
+    /* Backward-compat: legacy single [wifi.sta] is appended after networks
+     * if it has an ssid and the networks list didn't already hit the cap. */
     toml_table_t *sta = toml_table_in(wifi, "sta");
     if (sta) {
         toml_datum_t s = toml_string_in(sta, "ssid");
-        if (s.ok) { snprintf(cfg->wifi.sta_ssid,     sizeof(cfg->wifi.sta_ssid),     "%s", s.u.s); free(s.u.s); }
         toml_datum_t p = toml_string_in(sta, "password");
-        if (p.ok) { snprintf(cfg->wifi.sta_password, sizeof(cfg->wifi.sta_password), "%s", p.u.s); free(p.u.s); }
+        if (s.ok && s.u.s[0] != '\0') {
+            append_sta_network(&cfg->wifi, s.u.s, p.ok ? p.u.s : NULL,
+                                eb, ebsz, cfg->wifi.sta_network_count);
+        }
+        if (s.ok) free(s.u.s);
+        if (p.ok) free(p.u.s);
     }
 }
 
@@ -457,7 +521,75 @@ static void load_from_nvs(anchor_config_t *out)
         out->anchor.arming_seconds = (int) i32;
     }
 
+    /* WiFi mode + AP creds */
+    if (nvs_get_u8(h, NVS_KEY_WIFI_MODE, &u8) == ESP_OK) {
+        if (u8 == WIFI_OFF || u8 == WIFI_AP || u8 == WIFI_STA) {
+            out->wifi.mode = (anchor_wifi_mode_t) u8;
+        }
+    }
+    slen = sizeof(out->wifi.ap_ssid_prefix);
+    nvs_get_str(h, NVS_KEY_AP_SSID_PFX, out->wifi.ap_ssid_prefix, &slen);
+    slen = sizeof(out->wifi.ap_password);
+    nvs_get_str(h, NVS_KEY_AP_PASS,     out->wifi.ap_password,    &slen);
+
+    /* WiFi STA networks blob. */
+    nvs_wifi_blob_t blob;
+    size_t blen = sizeof(blob);
+    if (nvs_get_blob(h, NVS_KEY_WIFI_BLOB, &blob, &blen) == ESP_OK
+        && blen == sizeof(blob)
+        && blob.version == NVS_WIFI_BLOB_VERSION
+        && blob.count >= 0 && blob.count <= ANCHOR_WIFI_MAX_NETWORKS) {
+        out->wifi.sta_network_count = blob.count;
+        memcpy(out->wifi.sta_networks, blob.networks, sizeof(blob.networks));
+    }
+
     nvs_close(h);
+}
+
+/* Mirror the resolved config back to NVS so the cache always reflects the
+ * authoritative SD config. Called after a successful SD parse. */
+static void save_to_nvs(const anchor_config_t *in)
+{
+    nvs_handle_t h;
+    if (nvs_open(NVS_NAMESPACE, NVS_READWRITE, &h) != ESP_OK) {
+        ESP_LOGW(TAG, "NVS mirror: open failed; cache may be stale");
+        return;
+    }
+
+    nvs_set_str(h, NVS_KEY_DEV_NAME,    in->device.name);
+    nvs_set_u8 (h, NVS_KEY_METRIC,      in->device.metric ? 1 : 0);
+    nvs_set_i32(h, NVS_KEY_ROTATION,    in->display.rotation);
+    nvs_set_i32(h, NVS_KEY_BRIGHT,      in->display.brightness);
+
+    for (int i = 0; i < 3; i++) {
+        char key_m[16], key_u[16];
+        snprintf(key_m, sizeof(key_m), NVS_KEY_DIST_M_FMT, i);
+        snprintf(key_u, sizeof(key_u), NVS_KEY_DIST_U_FMT, i);
+        int32_t m_x10 = (int32_t) round(in->anchor.options[i].meters * 10.0);
+        nvs_set_i32(h, key_m, m_x10);
+        nvs_set_u8 (h, key_u, (uint8_t) in->anchor.options[i].unit);
+    }
+    nvs_set_i32(h, NVS_KEY_SELECTED, in->anchor.selected_idx);
+    nvs_set_i32(h, NVS_KEY_ARM_SEC,  in->anchor.arming_seconds);
+
+    nvs_set_u8 (h, NVS_KEY_WIFI_MODE,    (uint8_t) in->wifi.mode);
+    nvs_set_str(h, NVS_KEY_AP_SSID_PFX,  in->wifi.ap_ssid_prefix);
+    nvs_set_str(h, NVS_KEY_AP_PASS,      in->wifi.ap_password);
+
+    nvs_wifi_blob_t blob = {
+        .version = NVS_WIFI_BLOB_VERSION,
+        .count   = in->wifi.sta_network_count,
+    };
+    memcpy(blob.networks, in->wifi.sta_networks, sizeof(blob.networks));
+    nvs_set_blob(h, NVS_KEY_WIFI_BLOB, &blob, sizeof(blob));
+
+    esp_err_t cerr = nvs_commit(h);
+    nvs_close(h);
+    if (cerr != ESP_OK) {
+        ESP_LOGW(TAG, "NVS mirror: commit failed (%s)", esp_err_to_name(cerr));
+    } else {
+        ESP_LOGI(TAG, "NVS mirror: cache refreshed from SD config");
+    }
 }
 
 /* ---- Three-tier load ---------------------------------------------- */
@@ -481,6 +613,10 @@ esp_err_t anchor_config_load(anchor_config_t *out)
         } else {
             ESP_LOGI(TAG, "config.toml loaded cleanly");
         }
+        /* SD wins: mirror back to NVS so next boot without a card sees
+         * the latest config. Customer behavior the user requested:
+         * if SD differs from NVS, SD overwrites NVS. */
+        save_to_nvs(out);
     } else if (err == ESP_ERR_NOT_FOUND) {
         ESP_LOGI(TAG, "no /sdcard/anchor/config.toml — using NVS cache + defaults");
     } else if (err == ESP_ERR_INVALID_STATE) {
@@ -518,4 +654,11 @@ void anchor_config_log(const anchor_config_t *c)
     ESP_LOGI(TAG, "anchor.sound_volume   = %s", vol_str(c->anchor.sound_volume));
     ESP_LOGI(TAG, "wifi.mode             = %s", wifi_mode_str(c->wifi.mode));
     ESP_LOGI(TAG, "wifi.ap.ssid_prefix   = \"%s\"", c->wifi.ap_ssid_prefix);
+    ESP_LOGI(TAG, "wifi.networks         = %d configured", c->wifi.sta_network_count);
+    for (int i = 0; i < c->wifi.sta_network_count; i++) {
+        /* Don't log passwords. Just an indicator of presence. */
+        ESP_LOGI(TAG, "  [%d] ssid=\"%s\" password=%s",
+                 i, c->wifi.sta_networks[i].ssid,
+                 c->wifi.sta_networks[i].password[0] ? "(set)" : "(open)");
+    }
 }

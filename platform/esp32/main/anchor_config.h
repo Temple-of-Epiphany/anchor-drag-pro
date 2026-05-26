@@ -83,12 +83,23 @@ typedef struct {
     anchor_sound_volume_t  sound_volume;
 } anchor_anchor_cfg_t;
 
+/* WiFi STA credentials. SSID max 32 chars + null per 802.11; WPA2 password
+ * max 63 + null. Empty ssid[0] marks an unused slot. */
+typedef struct {
+    char ssid[33];
+    char password[64];
+} anchor_wifi_network_t;
+
+#define ANCHOR_WIFI_MAX_NETWORKS 8
+
 typedef struct {
     anchor_wifi_mode_t mode;
     char ap_ssid_prefix[32];
     char ap_password[64];
-    char sta_ssid[32];
-    char sta_password[64];
+    /* STA networks tried in array order; first one with a scan match wins.
+     * Count is the number of valid leading entries. */
+    anchor_wifi_network_t sta_networks[ANCHOR_WIFI_MAX_NETWORKS];
+    int sta_network_count;
 } anchor_wifi_cfg_t;
 
 /* ---- Top-level config ---------------------------------------------- */

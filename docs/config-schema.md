@@ -209,15 +209,21 @@ chip = "auto"
 
 ```toml
 [wifi]
-mode = "ap"
+mode = "sta"
 
 [wifi.ap]
 ssid_prefix = "AnchorAlarm"
 password = ""
 
-[wifi.sta]
-ssid = ""
-password = ""
+# Multiple STA networks tried in array order. First one the device sees on a
+# scan wins. Slot count is capped at 8.
+[[wifi.networks]]
+ssid     = "boat-house-wifi"
+password = "yourpassword1"
+
+[[wifi.networks]]
+ssid     = "marina-wifi"
+password = "yourpassword2"
 ```
 
 | Field | Type | Default | Notes |
@@ -225,8 +231,12 @@ password = ""
 | `mode` | enum | `"ap"` | `"ap"` = device runs its own access point (default for first-time setup); `"sta"` = device joins an existing network; `"off"` = disabled. |
 | `[wifi.ap].ssid_prefix` | string | `"AnchorAlarm"` | Device serial number is appended (e.g., `AnchorAlarm-A1B2`). |
 | `[wifi.ap].password` | string | empty | Empty = use auto-generated WPA2 password printed on device label. |
-| `[wifi.sta].ssid` | string | `""` | Joined network when `mode = "sta"`. |
-| `[wifi.sta].password` | string | `""` | Stored in NVS, encrypted at rest where supported. |
+| `[[wifi.networks]].ssid` | string | — | SSID (max 32 chars). Required per entry. |
+| `[[wifi.networks]].password` | string | `""` | WPA2 passphrase (max 63 chars). Empty = open network. Stored in NVS. |
+
+**Multi-network behavior:** when `mode = "sta"`, the device scans on boot, then connects to the **first network in the list** that's visible. If the chosen network drops, it retries the list from the top. The list is also persisted to the NVS cache, so pulling the SD mid-trip keeps the same priority. Maximum 8 entries.
+
+**Legacy form (still parsed):** `[wifi.sta]` with single `ssid`/`password` is appended after `[[wifi.networks]]` as a backward-compat shim. New configs should use `[[wifi.networks]]`.
 
 ### `[n2k_transmit]` — IMU/GPS variant only
 
@@ -321,4 +331,5 @@ See [`docs/config.example.toml`](./config.example.toml) for a fully-commented sa
 
 ## Change log
 
+- **0.2.0** (2026-05-26): WiFi `[wifi.sta]` (single SSID) replaced with `[[wifi.networks]]` array-of-tables for multi-network support; up to 8 entries tried in priority order. Legacy `[wifi.sta]` still parsed for backward compat. SD config now mirrors into NVS on every successful load, so SD always overrides cached values.
 - **0.1.0** (2026-04-26): Initial schema. Three-tier fallback. Three GPS source modalities (N2K with source-address selection / Serial / URL). Three IMU source modalities (N2K / Serial / Internal). Distance presets with unit-tagged validation. Brand-customizable but safety colors hardcoded.
