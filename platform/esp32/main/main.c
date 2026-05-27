@@ -46,13 +46,15 @@
 #include "screen_monitor.h"
 #include "screen_connections.h"
 #include "screen_info.h"
+#include "screen_settings.h"
+#include "screen_diagnostics.h"
 #include "screen_nav.h"
 #include "lvgl.h"
 
 static const char *TAG = "anchor_drag_pro";
 
 /* Phase B (#69) — LVGL infrastructure + Splash */
-#define FIRMWARE_VERSION_STRING "0.2.16"
+#define FIRMWARE_VERSION_STRING "0.2.17"
 
 /* The active configuration — read by anchor_config_load(), then consumed
  * by other modules (e.g., screen_monitor reads g_config.anchor.options[]
@@ -286,11 +288,13 @@ void app_main(void)
         /* Build the top-level carousel and hand off from Splash to the
          * landing screen (Monitor, in the middle of the swipe order).
          * Order matches Information-Architecture.md:
-         *   0 = Connections | 1 = Info | 2 = Monitor (default landing) |
-         *   (Settings + Diagnostics land in #73 / #74) */
+         *   0 = Connections | 1 = Info | 2 = Monitor (default) |
+         *   3 = Settings    | 4 = Diagnostics */
         lv_obj_t *connections = screen_connections_create();
         lv_obj_t *info        = screen_info_create();
         lv_obj_t *monitor     = screen_monitor_create();
+        lv_obj_t *settings    = screen_settings_create();
+        lv_obj_t *diagnostics = screen_diagnostics_create();
         if (monitor) {
             screen_monitor_set_boat_name(monitor, g_config.device.name);
         }
@@ -307,10 +311,18 @@ void app_main(void)
             screen_nav_register(2, monitor);
             screen_nav_attach_gestures(monitor);
         }
+        if (settings) {
+            screen_nav_register(3, settings);
+            screen_nav_attach_gestures(settings);
+        }
+        if (diagnostics) {
+            screen_nav_register(4, diagnostics);
+            screen_nav_attach_gestures(diagnostics);
+        }
 
         /* Land on Monitor (centre of the carousel) per spec. */
         screen_nav_switch_to(2);
-        ESP_LOGI(TAG, "splash -> Monitor (carousel: Connections | Info | MONITOR)");
+        ESP_LOGI(TAG, "splash -> Monitor (5-screen carousel)");
     }
 
     ESP_LOGI(TAG, "--- Boot complete — heartbeat every 10s ---");
