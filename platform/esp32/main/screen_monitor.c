@@ -16,11 +16,19 @@
 #include "screen_monitor.h"
 #include "ui_chrome.h"
 #include "ui_tokens.h"
+#include "ui_preset_picker.h"
+#include "ui_confirm.h"
 #include "lvgl_init.h"
+#include "anchor_config.h"
 #include "esp_log.h"
 #include "lvgl.h"
 #include <stdio.h>
 #include <string.h>
+
+/* Provided by main.c — the active config struct held for the lifetime
+ * of the device. Monitor reads cfg.anchor.options.distances[] to
+ * populate the Preset Picker modal. */
+extern anchor_config_t g_config;
 
 static const char *TAG = "monitor";
 
@@ -74,14 +82,117 @@ static action_btn_style_t action_for_state(ui_state_pill_t s)
 
 /* ---- Button event handler (placeholder for state-machine wiring) ---- */
 
+/* Confirm callback for DISARM-while-armed. */
+static void on_disarm_confirmed(void *user_data)
+{
+    monitor_state_t *st = (monitor_state_t *) user_data;
+    if (!st) return;
+    ESP_LOGI(TAG, "DISARM confirmed → state OFF (state-machine wiring TODO)");
+    /* Real implementation will transition the state machine. For now,
+     * just reflect OFF in the UI so the user sees their action. */
+    if (!lvgl_lock(500)) return;
+    st->current_state = UI_STATE_PILL_OFF;
+    ui_header_set_state_pill(st->header, UI_STATE_PILL_OFF);
+    action_btn_style_t a = action_for_state(UI_STATE_PILL_OFF);
+    lv_obj_set_style_bg_color(st->btn_action, a.color, LV_PART_MAIN);
+    lv_label_set_text(st->btn_action_label, a.label);
+    lv_label_set_text(st->distance_label, "Tap ARM when ready");
+    lv_label_set_text(st->distance_template_label, "");
+    lvgl_unlock();
+}
+
 static void on_action_btn_clicked(lv_event_t *e)
 {
     monitor_state_t *st = (monitor_state_t *) lv_event_get_user_data(e);
     if (!st) return;
-    ESP_LOGI(TAG, "action button clicked in state=%d (state-machine wiring TODO)",
-             (int) st->current_state);
-    /* Real implementation: transition state machine; subsequent
-     * screen_monitor_set_state() call updates the UI. */
+    ESP_LOGI(TAG, "action button clicked in state=%d", (int) st->current_state);
+
+    switch (st->current_state) {
+        case UI_STATE_PILL_OFF:
+        case UI_STATE_PILL_ON: {
+            /* ARM — transition to ARMING (state machine TODO; just reflect
+             * the visual transition for now). */
+            ESP_LOGI(TAG, "ARM tapped — transitioning to ARMING (visual only)");
+            st->current_state = UI_STATE_PILL_ARMING;
+            ui_header_set_state_pill(st->header, UI_STATE_PILL_ARMING);
+            action_btn_style_t a = action_for_state(UI_STATE_PILL_ARMING);
+            lv_obj_set_style_bg_color(st->btn_action, a.color, LV_PART_MAIN);
+            lv_label_set_text(st->btn_action_label, a.label);
+            lv_label_set_text(st->distance_label, "Collecting samples...");
+            break;
+        }
+        case UI_STATE_PILL_ARMING: {
+            /* CANCEL — back to OFF. */
+            ESP_LOGI(TAG, "CANCEL tapped — back to OFF");
+            st->current_state = UI_STATE_PILL_OFF;
+            ui_header_set_state_pill(st->header, UI_STATE_PILL_OFF);
+            action_btn_style_t a = action_for_state(UI_STATE_PILL_OFF);
+            lv_obj_set_style_bg_color(st->btn_action, a.color, LV_PART_MAIN);
+            lv_label_set_text(st->btn_action_label, a.label);
+            lv_label_set_text(st->distance_label, "Tap ARM when ready");
+            break;
+        }
+        case UI_STATE_PILL_ARMED:
+        case UI_STATE_PILL_MUTED: {
+            /* DISARM — hold to confirm (1 s, low-severity per spec). */
+            ui_confirm_params_t params = {
+                .title         = "DISARM anchor watch?",
+                .body          = { "The alarm will no longer trigger if the boat drifts.", NULL },
+                .final_warning = NULL,
+                .cancel_label  = "Cancel",
+                .confirm_label = "Hold to disarm",
+                .hold_ms       = 1000,
+                .severity      = UI_CONFIRM_HIGH,
+                .on_confirm    = on_disarm_confirmed,
+                .user_data     = st,
+            };
+            ui_confirm_show(&params);
+            break;
+        }
+        case UI_STATE_PILL_ALARM: {
+            /* MUTE — single tap, no confirm. State machine wiring TODO. */
+            ESP_LOGI(TAG, "MUTE tapped — silencing (visual only)");
+            st->current_state = UI_STATE_PILL_MUTED;
+            ui_header_set_state_pill(st->header, UI_STATE_PILL_MUTED);
+            action_btn_style_t a = action_for_state(UI_STATE_PILL_MUTED);
+            lv_obj_set_style_bg_color(st->btn_action, a.color, LV_PART_MAIN);
+            lv_label_set_text(st->btn_action_label, a.label);
+            break;
+        }
+        default: break;
+    }
+}
+
+/* Preset Picker callback — caller-side persistence. */
+static void on_preset_selected(int new_idx, void *user_data)
+{
+    monitor_state_t *st = (monitor_state_t *) user_data;
+    (void) st;
+    ESP_LOGI(TAG, "preset %d selected — persistence wiring lands with #63", new_idx);
+    /* When #63 (config writer) lands:
+     *   g_config.anchor.selected_idx = new_idx;
+     *   anchor_config_save(&g_config, NULL, 0);
+     */
+}
+
+/* Plot canvas tap → open Preset Picker. */
+static void on_plot_canvas_clicked(lv_event_t *e)
+{
+    monitor_state_t *st = (monitor_state_t *) lv_event_get_user_data(e);
+    if (!st) return;
+    bool locked = (st->current_state == UI_STATE_PILL_ARMING ||
+                   st->current_state == UI_STATE_PILL_ARMED  ||
+                   st->current_state == UI_STATE_PILL_ALARM  ||
+                   st->current_state == UI_STATE_PILL_MUTED);
+    ui_preset_picker_params_t params = {
+        .distances   = g_config.anchor.options,
+        .current_idx = g_config.anchor.selected_idx,
+        .locked      = locked,
+        .on_selected = on_preset_selected,
+        .user_data   = st,
+    };
+    ESP_LOGI(TAG, "plot tap → preset picker (locked=%d)", (int) locked);
+    ui_preset_picker_show(&params);
 }
 
 /* ---- Construction ---- */
@@ -136,6 +247,8 @@ lv_obj_t *screen_monitor_create(void)
     lv_obj_set_style_radius      (st->plot_canvas, 8,                        LV_PART_MAIN);
     lv_obj_set_style_pad_all     (st->plot_canvas, 0,                        LV_PART_MAIN);
     lv_obj_clear_flag            (st->plot_canvas, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag              (st->plot_canvas, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb          (st->plot_canvas, on_plot_canvas_clicked, LV_EVENT_CLICKED, st);
 
     st->plot_placeholder_label = lv_label_create(st->plot_canvas);
     lv_label_set_text(st->plot_placeholder_label, "NO GPS\nanchor watch unavailable");
@@ -143,6 +256,13 @@ lv_obj_t *screen_monitor_create(void)
     lv_obj_set_style_text_font (st->plot_placeholder_label, &lv_font_montserrat_22,      LV_PART_MAIN);
     lv_obj_set_style_text_align(st->plot_placeholder_label, LV_TEXT_ALIGN_CENTER,        LV_PART_MAIN);
     lv_obj_center(st->plot_placeholder_label);
+    /* The placeholder text covers part of the clickable canvas. Make
+     * the label itself clickable AND register the same handler so
+     * tapping over the text also opens the picker (the parent's
+     * handler doesn't fire when the click hits a non-clickable child
+     * because the click is consumed silently by the hit-test). */
+    lv_obj_add_flag    (st->plot_placeholder_label, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(st->plot_placeholder_label, on_plot_canvas_clicked, LV_EVENT_CLICKED, st);
 
     /* ---- Right column: readouts + action button ---- */
     lv_obj_t *right = lv_obj_create(content);

@@ -124,13 +124,12 @@ static void lvgl_task(void *arg) {
 
     while (1) {
         // Lock mutex and process LVGL tasks
-        if (xSemaphoreTake(lvgl_mutex, portMAX_DELAY) == pdTRUE) {
-            // Handle LVGL tasks (rendering, timers, animations)
-            // This may trigger flush callback which will wait for VSYNC
+        if (xSemaphoreTakeRecursive(lvgl_mutex, portMAX_DELAY) == pdTRUE) {
+            // Handle LVGL tasks (rendering, timers, animations).
+            // Event callbacks fired from here may re-enter lvgl_lock();
+            // the recursive mutex allows that without deadlock.
             task_delay_ms = lv_timer_handler();
-
-            // Unlock mutex
-            xSemaphoreGive(lvgl_mutex);
+            xSemaphoreGiveRecursive(lvgl_mutex);
         }
 
         // Clamp delay to reasonable range (like Waveshare does)
@@ -153,8 +152,12 @@ esp_err_t lvgl_init(void) {
     ESP_LOGI(TAG, "Initializing LVGL v%d.%d.%d",
              lv_version_major(), lv_version_minor(), lv_version_patch());
 
-    // Create mutex for LVGL thread safety
-    lvgl_mutex = xSemaphoreCreateMutex();
+    /* Create LVGL mutex — RECURSIVE so the LVGL task can re-acquire it
+     * from inside event callbacks (e.g. a button click handler that
+     * spawns a modal which calls lvgl_lock again). Without recursive
+     * semantics, every modal spawned from an event handler deadlocks
+     * until the lvgl_lock timeout expires. */
+    lvgl_mutex = xSemaphoreCreateRecursiveMutex();
     if (lvgl_mutex == NULL) {
         ESP_LOGE(TAG, "Failed to create LVGL mutex");
         return ESP_ERR_NO_MEM;
@@ -205,22 +208,10 @@ esp_err_t lvgl_init(void) {
 
     ESP_LOGI(TAG, "Display driver registered with LVGL");
 
-    // Create and register touch input device (LVGL 8.x API)
-    esp_lcd_touch_handle_t touch_handle = touch_get_handle();
-    if (touch_handle != NULL) {
-        static lv_indev_drv_t indev_drv;
-        lv_indev_drv_init(&indev_drv);
-        indev_drv.type = LV_INDEV_TYPE_POINTER;
-        indev_drv.read_cb = lvgl_touch_read_cb;
-        indev_drv.user_data = touch_handle;
-
-        lv_indev_t *touch_indev = lv_indev_drv_register(&indev_drv);
-        if (touch_indev != NULL) {
-            ESP_LOGI(TAG, "Touch input device registered with LVGL");
-        }
-    } else {
-        ESP_LOGW(TAG, "Touch handle is NULL, skipping touch registration");
-    }
+    /* Touch input device is registered separately via
+     * lvgl_register_touch_indev() so the caller can order
+     * touch_init() to run after lvgl_init() (the touch driver depends
+     * on subsystems set up here). See lvgl_init.h. */
 
     // Create and start tick timer (10ms period - Waveshare standard)
     const esp_timer_create_args_t timer_args = {
@@ -279,13 +270,44 @@ lv_disp_t* lvgl_get_display(void) {
 }
 
 /**
+ * Register the touch input device — public split-out so main.c can
+ * call it after touch_init() (which must run after lvgl_init() since
+ * the touch driver depends on i2c_bus already being up).
+ */
+esp_err_t lvgl_register_touch_indev(void) {
+    static lv_indev_drv_t s_indev_drv;
+    static bool           s_registered = false;
+    if (s_registered) {
+        return ESP_OK;
+    }
+    esp_lcd_touch_handle_t touch_handle = touch_get_handle();
+    if (touch_handle == NULL) {
+        ESP_LOGW(TAG, "lvgl_register_touch_indev: touch handle NULL");
+        return ESP_ERR_INVALID_STATE;
+    }
+    lv_indev_drv_init(&s_indev_drv);
+    s_indev_drv.type      = LV_INDEV_TYPE_POINTER;
+    s_indev_drv.read_cb   = lvgl_touch_read_cb;
+    s_indev_drv.user_data = touch_handle;
+
+    lv_indev_t *indev = lv_indev_drv_register(&s_indev_drv);
+    if (indev == NULL) {
+        ESP_LOGE(TAG, "lv_indev_drv_register failed");
+        return ESP_FAIL;
+    }
+    s_registered = true;
+    ESP_LOGI(TAG, "Touch input device registered with LVGL");
+    return ESP_OK;
+}
+
+/**
  * Lock LVGL mutex
  */
 bool lvgl_lock(uint32_t timeout_ms) {
     if (lvgl_mutex == NULL) {
         return false;
     }
-    return xSemaphoreTake(lvgl_mutex, pdMS_TO_TICKS(timeout_ms)) == pdTRUE;
+    return xSemaphoreTakeRecursive(lvgl_mutex, pdMS_TO_TICKS(timeout_ms)) == pdTRUE;
 }
 
 /**
@@ -293,7 +315,7 @@ bool lvgl_lock(uint32_t timeout_ms) {
  */
 void lvgl_unlock(void) {
     if (lvgl_mutex != NULL) {
-        xSemaphoreGive(lvgl_mutex);
+        xSemaphoreGiveRecursive(lvgl_mutex);
     }
 }
 

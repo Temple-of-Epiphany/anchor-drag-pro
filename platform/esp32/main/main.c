@@ -49,7 +49,13 @@
 static const char *TAG = "anchor_drag_pro";
 
 /* Phase B (#69) — LVGL infrastructure + Splash */
-#define FIRMWARE_VERSION_STRING "0.2.7"
+#define FIRMWARE_VERSION_STRING "0.2.14"
+
+/* The active configuration — read by anchor_config_load(), then consumed
+ * by other modules (e.g., screen_monitor reads g_config.anchor.options[]
+ * to populate the Preset Picker). Declared at file scope so its address
+ * is stable for the device's lifetime. */
+anchor_config_t g_config;
 
 static void log_chip_info(void)
 {
@@ -210,7 +216,6 @@ void app_main(void)
     ESP_LOGI(TAG, "--- Phase 3: load configuration ---");
     /* Three-tier load: SD config.toml -> NVS cache -> built-in defaults.
      * Always returns OK; device must always boot with some config. */
-    static anchor_config_t g_config;
     anchor_config_load(&g_config);
     anchor_config_log(&g_config);
     report_row(SPLASH_ROW_CONFIG, SPLASH_STATUS_PASS,
@@ -249,9 +254,11 @@ void app_main(void)
 
         report_row(SPLASH_ROW_DISPLAY, SPLASH_STATUS_PASS,
                    "%dx%d", LCD_WIDTH, LCD_HEIGHT);
-        /* Touch reset is harmless to attempt even when its full driver
-         * is a stub (milestone 1 of #69). */
-        touch_init();
+        /* Touch initialised AFTER lvgl_init so the GT911 device-handle
+         * exists by the time we register it as an LVGL input device. */
+        if (touch_init() == ESP_OK) {
+            lvgl_register_touch_indev();
+        }
 
         if (screen_splash_show(FIRMWARE_VERSION_STRING) != ESP_OK) {
             ESP_LOGE(TAG, "screen_splash_show failed");

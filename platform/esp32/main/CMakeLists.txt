@@ -22,6 +22,8 @@ idf_component_register(
         "screen_monitor.c"
         "ui_chrome.c"
         "ui_modals.c"
+        "ui_confirm.c"
+        "ui_preset_picker.c"
     INCLUDE_DIRS
         "."
         "vendor/tomlc99"

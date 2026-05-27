@@ -36,6 +36,21 @@
 esp_err_t lvgl_init(void);
 
 /**
+ * Register the touch input device with LVGL.
+ *
+ * Call this AFTER both lvgl_init() and touch_init() have succeeded.
+ * Idempotent — safe to call once per boot. Returns ESP_OK if the input
+ * device was registered (or was already registered); returns
+ * ESP_ERR_INVALID_STATE if touch_get_handle() is NULL (touch failed
+ * to come up).
+ *
+ * The original lvgl_init() also tries to register touch automatically,
+ * but only if touch_init() ran first. This split lets the caller order
+ * the bring-up however suits them.
+ */
+esp_err_t lvgl_register_touch_indev(void);
+
+/**
  * Get LVGL display object
  *
  * @return Pointer to LVGL display object

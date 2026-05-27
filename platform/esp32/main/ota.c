@@ -38,7 +38,7 @@ static const char *TAG = "ota";
  * Kept in sync manually until a generated version.h replaces both. */
 #define RUNNING_VERSION_MAJOR   0
 #define RUNNING_VERSION_MINOR   2
-#define RUNNING_VERSION_PATCH   7
+#define RUNNING_VERSION_PATCH   14
 
 /* Self-test that runs after first boot of a new partition. Currently
  * minimal — we don't have much running code yet. As LVGL / GPS / web UI
