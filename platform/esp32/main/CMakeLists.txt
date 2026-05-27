@@ -30,6 +30,9 @@ idf_component_register(
         "ui_confirm.c"
         "ui_preset_picker.c"
         "ui_alarm.c"
+
+        # Phase 5+ networking
+        "wifi_manager.c"
     INCLUDE_DIRS
         "."
         "vendor/tomlc99"
@@ -59,6 +62,12 @@ idf_component_register(
 
         # Phase B graphics
         esp_lcd
+
+        # Phase 5 networking
+        esp_wifi
+        esp_event
+        esp_netif
+        lwip
 )
 
 # Vendored tomlc99 uses isdigit(p[i]) where p[i] is a plain char. ESP-IDF
