@@ -145,8 +145,16 @@ static esp_err_t try_connect(void)
     esp_wifi_scan_get_ap_num(&n);
     if (n > MAX_SCAN_RESULTS) n = MAX_SCAN_RESULTS;
 
-    wifi_ap_record_t records[MAX_SCAN_RESULTS];
+    /* On the heap — 20 * sizeof(wifi_ap_record_t) ≈ 1.4 KB is enough to
+     * blow the worker stack at lower task-stack sizes. */
+    wifi_ap_record_t *records = NULL;
     if (n) {
+        records = calloc(n, sizeof(*records));
+        if (!records) {
+            ESP_LOGE(TAG, "scan: alloc failed");
+            set_state(WIFI_MGR_DISCONNECTED);
+            return ESP_ERR_NO_MEM;
+        }
         esp_wifi_scan_get_ap_records(&n, records);
     }
     ESP_LOGI(TAG, "scan found %u AP(s)", n);
@@ -169,6 +177,7 @@ static esp_err_t try_connect(void)
         ESP_LOGW(TAG, "none of %d configured SSIDs are visible",
                  s_cfg_copy.sta_network_count);
         set_state(WIFI_MGR_NO_NETWORKS);
+        free(records);
         return ESP_ERR_NOT_FOUND;
     }
 
@@ -177,6 +186,8 @@ static esp_err_t try_connect(void)
              pick->ssid, chosen, chosen_rssi);
     set_ssid(pick->ssid);
     set_rssi(chosen_rssi);
+    free(records);
+    records = NULL;
 
     wifi_config_t wifi_cfg = { 0 };
     strncpy((char *) wifi_cfg.sta.ssid,     pick->ssid,     sizeof(wifi_cfg.sta.ssid));
@@ -311,8 +322,12 @@ esp_err_t wifi_manager_start(const anchor_wifi_cfg_t *cfg)
     }
 
     if (!s_worker) {
+        /* 8 KB stack: the scan + WIFI_AUTH_WPA3_SAE auth path uses
+         * ~5 KB through esp_wifi_scan_get_ap_records + driver internals.
+         * 4 KB triggered "stack overflow in task wifi_mgr" within the
+         * first connect attempt. */
         BaseType_t r = xTaskCreatePinnedToCore(worker_task, "wifi_mgr",
-                                                4096, NULL, 4, &s_worker, 0);
+                                                8192, NULL, 4, &s_worker, 0);
         if (r != pdPASS) {
             ESP_LOGE(TAG, "failed to spawn worker");
             return ESP_FAIL;
@@ -378,8 +393,19 @@ static void do_scan_into_results(void)
     esp_wifi_scan_get_ap_num(&n);
     if (n > MAX_UI_SCAN_RESULTS) n = MAX_UI_SCAN_RESULTS;
 
-    wifi_ap_record_t recs[MAX_UI_SCAN_RESULTS];
-    if (n) esp_wifi_scan_get_ap_records(&n, recs);
+    wifi_ap_record_t *recs = NULL;
+    if (n) {
+        recs = calloc(n, sizeof(*recs));
+        if (!recs) {
+            ESP_LOGE(TAG, "ui scan: alloc failed");
+            if (xSemaphoreTakeRecursive(s_state_mtx, portMAX_DELAY) == pdTRUE) {
+                s_scan_busy = false;
+                xSemaphoreGiveRecursive(s_state_mtx);
+            }
+            return;
+        }
+        esp_wifi_scan_get_ap_records(&n, recs);
+    }
 
     if (xSemaphoreTakeRecursive(s_state_mtx, portMAX_DELAY) == pdTRUE) {
         s_scan_result_count = 0;
@@ -393,6 +419,7 @@ static void do_scan_into_results(void)
         s_scan_busy = false;
         xSemaphoreGiveRecursive(s_state_mtx);
     }
+    free(recs);
     ESP_LOGI(TAG, "UI scan complete: %u APs", n);
 }
 
@@ -414,7 +441,7 @@ esp_err_t wifi_manager_request_scan(void)
     }
     if (busy) return ESP_ERR_INVALID_STATE;
     if (xTaskCreatePinnedToCore(ui_scan_task, "wifi_ui_scan",
-                                  3072, NULL, 4, NULL, 0) != pdPASS) {
+                                  6144, NULL, 4, NULL, 0) != pdPASS) {
         return ESP_FAIL;
     }
     return ESP_OK;

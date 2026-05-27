@@ -20,6 +20,8 @@
 #include "ui_confirm.h"
 #include "lvgl_init.h"
 #include "anchor_config.h"
+#include "gps_source.h"
+#include "wifi_manager.h"
 #include "esp_log.h"
 #include "lvgl.h"
 #include <stdio.h>
@@ -45,6 +47,7 @@ typedef struct {
     lv_obj_t *btn_action;
     lv_obj_t *btn_action_label;
     ui_state_pill_t current_state;
+    lv_timer_t *refresh;
 } monitor_state_t;
 
 static monitor_state_t *get_state(lv_obj_t *m)
@@ -333,6 +336,11 @@ lv_obj_t *screen_monitor_create(void)
 
     lv_obj_set_user_data(scr, st);
 
+    /* Periodic refresh — header icons + plot placeholder live status.
+     * Defined below; declared here just before timer creation. */
+    extern void screen_monitor_refresh_cb(lv_timer_t *t);
+    st->refresh = lv_timer_create(screen_monitor_refresh_cb, 1000, scr);
+
     /* Apply initial state (OFF). */
     action_btn_style_t a = action_for_state(UI_STATE_PILL_OFF);
     lv_obj_set_style_bg_color(st->btn_action, a.color, LV_PART_MAIN);
@@ -413,6 +421,53 @@ void screen_monitor_set_boat_name(lv_obj_t *monitor, const char *name)
     if (!lvgl_lock(500)) return;
     ui_header_set_boat_name(st->header, name);
     lvgl_unlock();
+}
+
+/* Periodic poll of gps_source + wifi_manager. Mirrors the Connections
+ * screen's refresh pattern. Updates:
+ *   - Header GPS icon: green when gps fresh, dim when stale/absent
+ *   - Header WiFi icon: green when connected, dim otherwise
+ *   - Plot placeholder text: replaced by current lat/lon when fresh */
+void screen_monitor_refresh_cb(lv_timer_t *t)
+{
+    lv_obj_t *scr = (lv_obj_t *) t->user_data;
+    monitor_state_t *st = get_state(scr);
+    if (!st) return;
+
+    /* Header status icons. */
+    wifi_mgr_status_t w;
+    wifi_manager_get_status(&w);
+    ui_header_set_icon_wifi(st->header,
+        (w.state == WIFI_MGR_CONNECTED) ? UI_ICON_OK : UI_ICON_OFF);
+
+    bool gps_fresh = gps_source_is_fresh(5000);
+    ui_header_set_icon_gps(st->header, gps_fresh ? UI_ICON_OK : UI_ICON_OFF);
+
+    /* Plot placeholder: show live coords when fresh, fall back to
+     * "NO GPS" when absent. The full anchor-circle plot lands once
+     * the ARMED state machine + per-fix sample buffer exist. */
+    if (gps_fresh) {
+        gps_fix_t f;
+        gps_source_get(&f);
+        char buf[80];
+        if (f.pos_valid) {
+            snprintf(buf, sizeof(buf),
+                     "GPS LIVE\n%.5f, %.5f\n%d sats   %.1f kts",
+                     f.latitude, f.longitude,
+                     f.satellites,
+                     f.sog_valid ? f.sog_kts : 0.0);
+        } else {
+            snprintf(buf, sizeof(buf), "GPS LIVE\n(waiting for fix)");
+        }
+        lv_label_set_text(st->plot_placeholder_label, buf);
+        lv_obj_set_style_text_color(st->plot_placeholder_label,
+                                     UI_COLOR(STATE_ARMED), LV_PART_MAIN);
+    } else {
+        lv_label_set_text(st->plot_placeholder_label,
+                          "NO GPS\nanchor watch unavailable");
+        lv_obj_set_style_text_color(st->plot_placeholder_label,
+                                     UI_COLOR(TEXT_DIM), LV_PART_MAIN);
+    }
 }
 
 lv_obj_t *screen_monitor_header(lv_obj_t *monitor)

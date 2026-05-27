@@ -15,6 +15,9 @@
 #include "ui_chrome.h"
 #include "ui_tokens.h"
 #include "lvgl_init.h"
+#include "wifi_manager.h"
+#include "tcp_gateway.h"
+#include "gps_source.h"
 #include "esp_log.h"
 #include "lvgl.h"
 #include <stdio.h>
@@ -33,11 +36,14 @@ typedef struct {
     lv_obj_t       *footer;
     lv_obj_t       *banner;
     row_widgets_t   rows[CONN_ROW_COUNT];
+    lv_timer_t     *refresh;
 } conn_state_t;
 
 static conn_state_t *get_state(lv_obj_t *s) {
     return (conn_state_t *) lv_obj_get_user_data(s);
 }
+
+static void refresh_cb(lv_timer_t *t);   /* defined below; referenced by create */
 
 static const char *row_label(conn_row_id_t r)
 {
@@ -236,10 +242,70 @@ lv_obj_t *screen_connections_create(void)
     }
 
     lv_obj_set_user_data(scr, st);
+
+    /* Periodic refresh — wifi + gateway + gps live status. */
+    st->refresh = lv_timer_create(refresh_cb, 1000, scr);
+
     lvgl_unlock();
 
     ESP_LOGI(TAG, "connections screen created");
     return scr;
+}
+
+/* Periodic refresh — polls wifi_manager + tcp_gateway + gps_source and
+ * updates the WiFi STA, URL gateway, and GPS source rows. */
+static void refresh_cb(lv_timer_t *t)
+{
+    lv_obj_t *scr = (lv_obj_t *) t->user_data;
+    conn_state_t *st = get_state(scr);
+    if (!st) return;
+
+    /* WiFi STA */
+    wifi_mgr_status_t w;
+    wifi_manager_get_status(&w);
+    char buf[64];
+    if (w.state == WIFI_MGR_CONNECTED) {
+        snprintf(buf, sizeof(buf), "%s  %d dBm  %s", w.ssid, w.rssi, w.ip);
+        screen_connections_set_row(scr, CONN_ROW_WIFI_STA, CONN_STATUS_OK, buf);
+    } else if (w.state == WIFI_MGR_CONNECTING || w.state == WIFI_MGR_SCANNING) {
+        screen_connections_set_row(scr, CONN_ROW_WIFI_STA, CONN_STATUS_SCANNING,
+                                    w.state == WIFI_MGR_SCANNING ? "scanning..." : "connecting...");
+    } else if (w.state == WIFI_MGR_DISABLED) {
+        screen_connections_set_row(scr, CONN_ROW_WIFI_STA, CONN_STATUS_DISABLED, "disabled in config");
+    } else {
+        screen_connections_set_row(scr, CONN_ROW_WIFI_STA, CONN_STATUS_FAIL, "not connected");
+    }
+
+    /* URL gateway — host buffer is 64 chars; pre-truncate so the
+     * "%s:%d ..." formatted detail fits in `buf` without
+     * -Wformat-truncation tripping. */
+    tcp_gateway_status_t g;
+    tcp_gateway_get_status(&g);
+    char hbuf[40];
+    snprintf(hbuf, sizeof(hbuf), "%.*s", (int) sizeof(hbuf) - 1, g.host);
+    if (g.connected) {
+        snprintf(buf, sizeof(buf), "%s:%d  %lu sent", hbuf, g.port,
+                 (unsigned long) g.sentences_in);
+        screen_connections_set_row(scr, CONN_ROW_URL, CONN_STATUS_OK, buf);
+    } else if (g.host[0]) {
+        snprintf(buf, sizeof(buf), "%s:%d  retrying...", hbuf, g.port);
+        screen_connections_set_row(scr, CONN_ROW_URL, CONN_STATUS_SCANNING, buf);
+    }
+
+    /* GPS source (URL ingest) */
+    if (gps_source_is_fresh(5000)) {
+        gps_fix_t f;
+        gps_source_get(&f);
+        if (f.pos_valid) {
+            snprintf(buf, sizeof(buf), "URL  %.4f, %.4f  sats %d",
+                     f.latitude, f.longitude, f.satellites);
+        } else {
+            snprintf(buf, sizeof(buf), "URL  (no fix yet)");
+        }
+        screen_connections_set_row(scr, CONN_ROW_GPS, CONN_STATUS_OK, buf);
+    } else {
+        screen_connections_set_row(scr, CONN_ROW_GPS, CONN_STATUS_DISABLED, "no source visible");
+    }
 }
 
 void screen_connections_set_row(lv_obj_t *screen,

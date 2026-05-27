@@ -35,6 +35,9 @@ idf_component_register(
 
         # Phase 5+ networking
         "wifi_manager.c"
+        "nmea0183.c"
+        "gps_source.c"
+        "tcp_gateway.c"
     INCLUDE_DIRS
         "."
         "vendor/tomlc99"

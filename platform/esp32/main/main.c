@@ -50,12 +50,19 @@
 #include "screen_diagnostics.h"
 #include "screen_nav.h"
 #include "wifi_manager.h"
+#include "tcp_gateway.h"
+#include "gps_source.h"
 #include "lvgl.h"
+
+/* Bench-test default for the n2k-simulator-pro stream. v0.2 hardcodes
+ * this; #63 will pull host/port from cfg.gps.url.url. */
+#define SIM_HOST  "192.168.7.181"
+#define SIM_PORT  10110
 
 static const char *TAG = "anchor_drag_pro";
 
 /* Phase B (#69) — LVGL infrastructure + Splash */
-#define FIRMWARE_VERSION_STRING "0.2.19"
+#define FIRMWARE_VERSION_STRING "0.2.22"
 
 /* The active configuration — read by anchor_config_load(), then consumed
  * by other modules (e.g., screen_monitor reads g_config.anchor.options[]
@@ -228,9 +235,7 @@ void app_main(void)
                sd_card_is_mounted() ? "from SD" : "from NVS / defaults");
 
     /* WiFi — kick off the manager in the background. wifi_manager_start
-     * returns immediately; scan + connect happen on the worker task.
-     * Splash shows "scanning..." now; the IP_EVENT_STA_GOT_IP handler
-     * will update the row to PASS later when the IP arrives. */
+     * returns immediately; scan + connect happen on the worker task. */
     if (wifi_manager_init() == ESP_OK && wifi_manager_start(&g_config.wifi) == ESP_OK) {
         if (g_config.wifi.mode == WIFI_STA && g_config.wifi.sta_network_count > 0) {
             report_row(SPLASH_ROW_WIFI, SPLASH_STATUS_RUNNING, "scanning...");
@@ -241,8 +246,15 @@ void app_main(void)
         report_row(SPLASH_ROW_WIFI, SPLASH_STATUS_FAIL, "init failed");
     }
 
-    /* GPS / IMU sources still not implemented. */
-    report_row(SPLASH_ROW_GPS,  SPLASH_STATUS_SKIP, "not implemented");
+    /* GPS source manager + TCP gateway client to the simulator. The
+     * gateway task waits internally for WiFi to come up, then connects
+     * and starts pushing parsed NMEA into gps_source. */
+    gps_source_init();
+    if (tcp_gateway_start(SIM_HOST, SIM_PORT) == ESP_OK) {
+        report_row(SPLASH_ROW_GPS, SPLASH_STATUS_RUNNING, "waiting for WiFi...");
+    } else {
+        report_row(SPLASH_ROW_GPS, SPLASH_STATUS_FAIL, "gateway init failed");
+    }
     report_row(SPLASH_ROW_IMU,  SPLASH_STATUS_SKIP, "not implemented");
 
     ESP_LOGI(TAG, "--- Phase B (#69): bring up display + LVGL + Splash ---");

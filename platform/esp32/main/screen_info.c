@@ -15,10 +15,13 @@
 #include "ui_chrome.h"
 #include "ui_tokens.h"
 #include "lvgl_init.h"
+#include "gps_source.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "lvgl.h"
 #include <stdio.h>
 #include <string.h>
+#include <math.h>
 
 static const char *TAG = "info";
 
@@ -41,10 +44,76 @@ typedef struct {
     lv_obj_t *pitch_lbl;
     lv_obj_t *rot_lbl;
     lv_obj_t *hdg_source_lbl;
+    lv_timer_t *refresh;
 } info_state_t;
 
 static info_state_t *get_state(lv_obj_t *s) {
     return (info_state_t *) lv_obj_get_user_data(s);
+}
+
+/* Format signed decimal degrees as DDM (deg + decimal minutes) with a
+ * cardinal hemisphere letter (N/S for lat, E/W for lon). */
+static void format_ddm(char *buf, size_t sz, double deg, bool is_lat)
+{
+    double a = fabs(deg);
+    int    d = (int) a;
+    double m = (a - d) * 60.0;
+    char hemi;
+    if (is_lat) hemi = (deg >= 0) ? 'N' : 'S';
+    else        hemi = (deg >= 0) ? 'E' : 'W';
+    snprintf(buf, sz, "%d° %06.3f' %c", d, m, hemi);
+}
+
+static void refresh_cb(lv_timer_t *t)
+{
+    lv_obj_t *scr = (lv_obj_t *) t->user_data;
+    info_state_t *st = get_state(scr);
+    if (!st) return;
+    gps_fix_t f; gps_source_get(&f);
+    bool fresh = gps_source_is_fresh(5000);
+    char buf[64];
+
+    if (fresh && f.pos_valid) {
+        format_ddm(buf, sizeof(buf), f.latitude,  true);
+        lv_label_set_text(st->lat_lbl, buf);
+        format_ddm(buf, sizeof(buf), f.longitude, false);
+        lv_label_set_text(st->lon_lbl, buf);
+    } else {
+        lv_label_set_text(st->lat_lbl, "––° ––.–––' –");
+        lv_label_set_text(st->lon_lbl, "––° ––.–––' –");
+    }
+
+    snprintf(buf, sizeof(buf), "%s   %d sats",
+             f.fix_quality == 3 ? "3D" : (f.fix_quality > 0 ? "2D" : "none"),
+             f.satellites);
+    lv_label_set_text(st->fix_lbl, buf);
+
+    snprintf(buf, sizeof(buf), "%.1f", f.hdop);   lv_label_set_text(st->hdop_lbl, buf);
+    snprintf(buf, sizeof(buf), "%.1f m", f.altitude_m); lv_label_set_text(st->alt_lbl, buf);
+    if (f.sog_valid) { snprintf(buf, sizeof(buf), "%.1f kts", f.sog_kts); lv_label_set_text(st->sog_lbl, buf); }
+    if (f.cog_valid) { snprintf(buf, sizeof(buf), "%03d°",  (int) f.cog_deg); lv_label_set_text(st->cog_lbl, buf); }
+
+    /* Position source line */
+    if (fresh) {
+        uint32_t age_ms = (uint32_t) (((uint64_t) esp_timer_get_time() - f.last_update_us) / 1000);
+        snprintf(buf, sizeof(buf), "Source: URL  updated %lu ms ago",
+                 (unsigned long) age_ms);
+    } else {
+        snprintf(buf, sizeof(buf), "Source: none");
+    }
+    lv_label_set_text(st->pos_source_lbl, buf);
+
+    /* Heading card */
+    if (f.heading_valid && fresh) {
+        snprintf(buf, sizeof(buf), "%03d°  (%s)",
+                 (int) f.heading_deg, f.heading_is_true ? "true" : "mag");
+        lv_label_set_text(st->hdg_lbl, buf);
+        lv_label_set_text(st->hdg_source_lbl,
+                          f.source == GPS_SRC_URL ? "Source: URL" : "Source: NMEA");
+    } else {
+        lv_label_set_text(st->hdg_lbl, "––");
+        lv_label_set_text(st->hdg_source_lbl, "Source: none");
+    }
 }
 
 /* Helper: one row inside a card — label on the left, value on the right. */
@@ -202,6 +271,7 @@ lv_obj_t *screen_info_create(void)
     lv_obj_set_style_text_font (st->hdg_source_lbl, &lv_font_montserrat_14, LV_PART_MAIN);
 
     lv_obj_set_user_data(scr, st);
+    st->refresh = lv_timer_create(refresh_cb, 1000, scr);
     lvgl_unlock();
 
     ESP_LOGI(TAG, "info screen created");
