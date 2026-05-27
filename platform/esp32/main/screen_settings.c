@@ -8,6 +8,7 @@
  */
 
 #include "screen_settings.h"
+#include "screen_wifi.h"
 #include "ui_chrome.h"
 #include "ui_tokens.h"
 #include "ui_preset_picker.h"
@@ -154,6 +155,24 @@ static void on_web_only_row_clicked(lv_event_t *e)
     show_web_only_toast(NULL, field ? field : "Setting");
 }
 
+/* Settings → "STA networks" / "WiFi mode" rows now open the on-device
+ * WiFi editor (#85). Creates the screen lazily on first open. */
+static lv_obj_t *s_wifi_screen = NULL;
+
+static void on_wifi_row_clicked(lv_event_t *e)
+{
+    (void) e;
+    if (!s_wifi_screen) {
+        s_wifi_screen = screen_wifi_create();
+    }
+    if (s_wifi_screen) {
+        if (lvgl_lock(1000)) {
+            lv_scr_load(s_wifi_screen);
+            lvgl_unlock();
+        }
+    }
+}
+
 /* ---- Construction ---- */
 
 lv_obj_t *screen_settings_create(void)
@@ -276,7 +295,7 @@ lv_obj_t *screen_settings_create(void)
 
     lv_obj_t *wifi_row = row_create(network, "WiFi mode", true);
     lv_obj_add_flag    (wifi_row, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_add_event_cb(wifi_row, on_web_only_row_clicked, LV_EVENT_CLICKED, "WiFi mode");
+    lv_obj_add_event_cb(wifi_row, on_wifi_row_clicked, LV_EVENT_CLICKED, NULL);
     const char *wmode = (g_config.wifi.mode == WIFI_OFF) ? "off"
                        : (g_config.wifi.mode == WIFI_AP) ? "AP" : "STA";
     char wbuf[64];
@@ -288,7 +307,7 @@ lv_obj_t *screen_settings_create(void)
 
     lv_obj_t *nets_row = row_create(network, "STA networks", true);
     lv_obj_add_flag    (nets_row, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_add_event_cb(nets_row, on_web_only_row_clicked, LV_EVENT_CLICKED, "STA networks");
+    lv_obj_add_event_cb(nets_row, on_wifi_row_clicked, LV_EVENT_CLICKED, NULL);
     char nnbuf[40];
     snprintf(nnbuf, sizeof(nnbuf), "%d configured  (web only)",
              g_config.wifi.sta_network_count);

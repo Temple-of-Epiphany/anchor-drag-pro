@@ -340,3 +340,124 @@ void wifi_manager_get_status(wifi_mgr_status_t *out)
         xSemaphoreGiveRecursive(s_state_mtx);
     }
 }
+
+/* ---- Scan API (on-device WiFi editor support) ----
+ *
+ * We piggy-back on esp_wifi's scan facility but avoid blocking the
+ * caller: request_scan() kicks the worker, which performs the scan
+ * synchronously on its own task; results stay in s_scan_results until
+ * the next scan.
+ */
+
+#define MAX_UI_SCAN_RESULTS  20
+
+static wifi_mgr_ap_t s_scan_results[MAX_UI_SCAN_RESULTS];
+static size_t        s_scan_result_count = 0;
+static bool          s_scan_busy         = false;
+
+/* Called from worker_task and on-demand scans. */
+static void do_scan_into_results(void)
+{
+    if (xSemaphoreTakeRecursive(s_state_mtx, portMAX_DELAY) == pdTRUE) {
+        s_scan_busy = true;
+        xSemaphoreGiveRecursive(s_state_mtx);
+    }
+
+    wifi_scan_config_t scan_cfg = { 0 };
+    esp_err_t err = esp_wifi_scan_start(&scan_cfg, true);  /* blocking */
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "ui scan failed: %s", esp_err_to_name(err));
+        if (xSemaphoreTakeRecursive(s_state_mtx, portMAX_DELAY) == pdTRUE) {
+            s_scan_busy = false;
+            xSemaphoreGiveRecursive(s_state_mtx);
+        }
+        return;
+    }
+
+    uint16_t n = 0;
+    esp_wifi_scan_get_ap_num(&n);
+    if (n > MAX_UI_SCAN_RESULTS) n = MAX_UI_SCAN_RESULTS;
+
+    wifi_ap_record_t recs[MAX_UI_SCAN_RESULTS];
+    if (n) esp_wifi_scan_get_ap_records(&n, recs);
+
+    if (xSemaphoreTakeRecursive(s_state_mtx, portMAX_DELAY) == pdTRUE) {
+        s_scan_result_count = 0;
+        for (uint16_t i = 0; i < n && i < MAX_UI_SCAN_RESULTS; i++) {
+            wifi_mgr_ap_t *out = &s_scan_results[s_scan_result_count++];
+            snprintf(out->ssid, sizeof(out->ssid), "%s", recs[i].ssid);
+            out->rssi    = recs[i].rssi;
+            out->channel = recs[i].primary;
+            out->secured = (recs[i].authmode != WIFI_AUTH_OPEN);
+        }
+        s_scan_busy = false;
+        xSemaphoreGiveRecursive(s_state_mtx);
+    }
+    ESP_LOGI(TAG, "UI scan complete: %u APs", n);
+}
+
+/* Tiny one-shot task so request_scan() returns immediately. */
+static void ui_scan_task(void *arg)
+{
+    (void) arg;
+    do_scan_into_results();
+    vTaskDelete(NULL);
+}
+
+esp_err_t wifi_manager_request_scan(void)
+{
+    if (!s_initted) return ESP_ERR_INVALID_STATE;
+    bool busy = false;
+    if (xSemaphoreTakeRecursive(s_state_mtx, portMAX_DELAY) == pdTRUE) {
+        busy = s_scan_busy;
+        xSemaphoreGiveRecursive(s_state_mtx);
+    }
+    if (busy) return ESP_ERR_INVALID_STATE;
+    if (xTaskCreatePinnedToCore(ui_scan_task, "wifi_ui_scan",
+                                  3072, NULL, 4, NULL, 0) != pdPASS) {
+        return ESP_FAIL;
+    }
+    return ESP_OK;
+}
+
+size_t wifi_manager_get_scan_results(wifi_mgr_ap_t *out, size_t max)
+{
+    if (!out || max == 0) return 0;
+    size_t copied = 0;
+    if (xSemaphoreTakeRecursive(s_state_mtx, portMAX_DELAY) == pdTRUE) {
+        copied = (s_scan_result_count < max) ? s_scan_result_count : max;
+        memcpy(out, s_scan_results, copied * sizeof(wifi_mgr_ap_t));
+        xSemaphoreGiveRecursive(s_state_mtx);
+    }
+    return copied;
+}
+
+bool wifi_manager_scan_in_progress(void)
+{
+    bool busy = false;
+    if (xSemaphoreTakeRecursive(s_state_mtx, portMAX_DELAY) == pdTRUE) {
+        busy = s_scan_busy;
+        xSemaphoreGiveRecursive(s_state_mtx);
+    }
+    return busy;
+}
+
+esp_err_t wifi_manager_try_connect(const char *ssid, const char *password)
+{
+    if (!ssid || !*ssid) return ESP_ERR_INVALID_ARG;
+    if (!s_initted)      return ESP_ERR_INVALID_STATE;
+
+    ESP_LOGI(TAG, "try_connect: \"%s\"", ssid);
+    set_ssid(ssid);
+    set_state(WIFI_MGR_CONNECTING);
+
+    wifi_config_t cfg = { 0 };
+    strncpy((char *) cfg.sta.ssid,     ssid,     sizeof(cfg.sta.ssid));
+    if (password) strncpy((char *) cfg.sta.password, password, sizeof(cfg.sta.password));
+    cfg.sta.threshold.authmode = WIFI_AUTH_OPEN;
+    esp_err_t err = esp_wifi_set_config(WIFI_IF_STA, &cfg);
+    if (err != ESP_OK) return err;
+
+    esp_wifi_disconnect();   /* drop any existing assoc */
+    return esp_wifi_connect();
+}

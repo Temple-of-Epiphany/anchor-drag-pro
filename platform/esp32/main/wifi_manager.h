@@ -57,6 +57,37 @@ esp_err_t wifi_manager_start(const anchor_wifi_cfg_t *cfg);
  * the user edits the network list via the UI. */
 void      wifi_manager_reconnect(void);
 
+/* ---- Scan API (for the on-device WiFi editor) ----
+ *
+ * Returns a snapshot of the most recent scan results. The on-device
+ * WiFi screen calls wifi_manager_request_scan() (non-blocking; result
+ * arrives via the event handler) and then polls
+ * wifi_manager_get_scan_results() to render the list. */
+
+typedef struct {
+    char ssid[33];
+    int  rssi;            /* dBm */
+    int  channel;         /* 1..13 */
+    bool secured;         /* true if any auth required */
+} wifi_mgr_ap_t;
+
+/* Kick off an async scan. Returns ESP_OK if started, ESP_ERR_INVALID_STATE
+ * if already scanning. The worker task will update internal results on
+ * completion; UI polls via _get_scan_results below. */
+esp_err_t wifi_manager_request_scan(void);
+
+/* Copy up to `max` scan results into `out`. Returns the number actually
+ * written (≤ max, ≤ internal cap of 20). */
+size_t    wifi_manager_get_scan_results(wifi_mgr_ap_t *out, size_t max);
+
+/* True if a scan is currently running. */
+bool      wifi_manager_scan_in_progress(void);
+
+/* Convenience: try connecting to a specific (SSID, password) pair
+ * immediately, without writing it to cfg first. Useful for "Try this
+ * network" before saving. */
+esp_err_t wifi_manager_try_connect(const char *ssid, const char *password);
+
 /* Snapshot the current state. Thread-safe; safe to call from any task
  * including LVGL event callbacks. */
 void      wifi_manager_get_status(wifi_mgr_status_t *out);

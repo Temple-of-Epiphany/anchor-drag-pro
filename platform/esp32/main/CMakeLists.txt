@@ -30,6 +30,8 @@ idf_component_register(
         "ui_confirm.c"
         "ui_preset_picker.c"
         "ui_alarm.c"
+        "ui_wifi_password.c"
+        "screen_wifi.c"
 
         # Phase 5+ networking
         "wifi_manager.c"
