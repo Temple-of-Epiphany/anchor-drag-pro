@@ -43,11 +43,13 @@
 #include "touch_driver.h"
 #include "lvgl_init.h"
 #include "screen_splash.h"
+#include "screen_monitor.h"
+#include "lvgl.h"
 
 static const char *TAG = "anchor_drag_pro";
 
 /* Phase B (#69) — LVGL infrastructure + Splash */
-#define FIRMWARE_VERSION_STRING "0.2.6"
+#define FIRMWARE_VERSION_STRING "0.2.7"
 
 static void log_chip_info(void)
 {
@@ -260,6 +262,26 @@ void app_main(void)
     }
 
     screen_splash_done();
+
+    /* Splash → Monitor handoff. Hold the splash for 2 seconds so the
+     * user can read the boot summary, then switch to Monitor. The
+     * splash screen object is abandoned (lv_obj_clean handles it when
+     * the screen tree changes — fine for v0.2 boot path).
+     *
+     * If display isn't up (display_init or lvgl_init failed earlier),
+     * skip — the device runs headless. */
+    if (s_splash_up) {
+        vTaskDelay(pdMS_TO_TICKS(2000));
+        lv_obj_t *monitor = screen_monitor_create();
+        if (monitor) {
+            screen_monitor_set_boat_name(monitor, g_config.device.name);
+            if (lvgl_lock(1000)) {
+                lv_scr_load(monitor);
+                lvgl_unlock();
+            }
+            ESP_LOGI(TAG, "splash -> Monitor (state=OFF)");
+        }
+    }
 
     ESP_LOGI(TAG, "--- Boot complete — heartbeat every 10s ---");
 

@@ -19,6 +19,7 @@ idf_component_register(
         "touch_driver.c"
         "lvgl_init.c"
         "screen_splash.c"
+        "screen_monitor.c"
         "ui_chrome.c"
         "ui_modals.c"
     INCLUDE_DIRS
