@@ -44,12 +44,15 @@
 #include "lvgl_init.h"
 #include "screen_splash.h"
 #include "screen_monitor.h"
+#include "screen_connections.h"
+#include "screen_info.h"
+#include "screen_nav.h"
 #include "lvgl.h"
 
 static const char *TAG = "anchor_drag_pro";
 
 /* Phase B (#69) — LVGL infrastructure + Splash */
-#define FIRMWARE_VERSION_STRING "0.2.14"
+#define FIRMWARE_VERSION_STRING "0.2.16"
 
 /* The active configuration — read by anchor_config_load(), then consumed
  * by other modules (e.g., screen_monitor reads g_config.anchor.options[]
@@ -279,15 +282,35 @@ void app_main(void)
      * skip — the device runs headless. */
     if (s_splash_up) {
         vTaskDelay(pdMS_TO_TICKS(2000));
-        lv_obj_t *monitor = screen_monitor_create();
+
+        /* Build the top-level carousel and hand off from Splash to the
+         * landing screen (Monitor, in the middle of the swipe order).
+         * Order matches Information-Architecture.md:
+         *   0 = Connections | 1 = Info | 2 = Monitor (default landing) |
+         *   (Settings + Diagnostics land in #73 / #74) */
+        lv_obj_t *connections = screen_connections_create();
+        lv_obj_t *info        = screen_info_create();
+        lv_obj_t *monitor     = screen_monitor_create();
         if (monitor) {
             screen_monitor_set_boat_name(monitor, g_config.device.name);
-            if (lvgl_lock(1000)) {
-                lv_scr_load(monitor);
-                lvgl_unlock();
-            }
-            ESP_LOGI(TAG, "splash -> Monitor (state=OFF)");
         }
+
+        if (connections) {
+            screen_nav_register(0, connections);
+            screen_nav_attach_gestures(connections);
+        }
+        if (info) {
+            screen_nav_register(1, info);
+            screen_nav_attach_gestures(info);
+        }
+        if (monitor) {
+            screen_nav_register(2, monitor);
+            screen_nav_attach_gestures(monitor);
+        }
+
+        /* Land on Monitor (centre of the carousel) per spec. */
+        screen_nav_switch_to(2);
+        ESP_LOGI(TAG, "splash -> Monitor (carousel: Connections | Info | MONITOR)");
     }
 
     ESP_LOGI(TAG, "--- Boot complete — heartbeat every 10s ---");

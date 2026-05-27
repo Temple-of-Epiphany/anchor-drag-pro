@@ -175,11 +175,28 @@ static void on_preset_selected(int new_idx, void *user_data)
      */
 }
 
-/* Plot canvas tap → open Preset Picker. */
+/* Plot canvas tap → open Preset Picker.
+ *
+ * Important: the plot canvas is the largest touch target on the screen
+ * and the user often swipes across it to navigate. LVGL emits CLICKED
+ * at touch-release even when a swipe is in progress (the gesture-cancel
+ * doesn't always beat the click). Guard against that by checking the
+ * active input device — if it just produced a horizontal gesture, the
+ * tap was actually a swipe and we shouldn't open the picker. */
 static void on_plot_canvas_clicked(lv_event_t *e)
 {
     monitor_state_t *st = (monitor_state_t *) lv_event_get_user_data(e);
     if (!st) return;
+
+    lv_indev_t *indev = lv_indev_get_act();
+    if (indev) {
+        lv_dir_t g = lv_indev_get_gesture_dir(indev);
+        if (g == LV_DIR_LEFT || g == LV_DIR_RIGHT ||
+            g == LV_DIR_TOP  || g == LV_DIR_BOTTOM) {
+            ESP_LOGD(TAG, "plot tap ignored — swipe in progress (dir=%d)", g);
+            return;
+        }
+    }
     bool locked = (st->current_state == UI_STATE_PILL_ARMING ||
                    st->current_state == UI_STATE_PILL_ARMED  ||
                    st->current_state == UI_STATE_PILL_ALARM  ||
