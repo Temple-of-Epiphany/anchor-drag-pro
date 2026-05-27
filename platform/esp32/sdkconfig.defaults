@@ -40,6 +40,20 @@ CONFIG_LV_MEM_CUSTOM=y
 CONFIG_LV_MEMCPY_MEMSET_STD=y
 CONFIG_LV_ATTRIBUTE_FAST_MEM_USE_IRAM=y
 
+# LVGL fonts — enable the Montserrat sizes used by the wiki UI specs.
+# Wiki spec keys text sizes at 14 (small labels), 16 (body), 18 (status
+# rows), 22 (modal titles), 32 (splash brand). Adjust here when a new
+# size is introduced in a spec; un-enabled sizes are stripped from the
+# build to save flash. See Spec-Sync wiki page for the contract.
+CONFIG_LV_FONT_MONTSERRAT_14=y
+CONFIG_LV_FONT_MONTSERRAT_16=y
+CONFIG_LV_FONT_MONTSERRAT_18=y
+CONFIG_LV_FONT_MONTSERRAT_20=y
+CONFIG_LV_FONT_MONTSERRAT_22=y
+CONFIG_LV_FONT_MONTSERRAT_24=y
+CONFIG_LV_FONT_MONTSERRAT_28=y
+CONFIG_LV_FONT_MONTSERRAT_32=y
+
 # Custom Partition Table (3MB app partition for large firmware)
 CONFIG_PARTITION_TABLE_CUSTOM=y
 CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"

@@ -34,7 +34,9 @@ node_modules/
 package-lock.json
 
 # Lock files
-dependencies.lock
+# NOTE: ESP-IDF dependencies.lock IS committed — see
+# platform/esp32/main/idf_component.yml for the rationale (reproducible
+# builds prevent LVGL 8.x/9.x style drift incidents).
 
 # Examples
 examples/

@@ -1,17 +1,19 @@
 /*
  * Anchor Drag Pro — ESP32 firmware
- * v0.2 clean rebuild — Phase 2D (OTA from SD).
+ * Phase B (#69) — LVGL infrastructure + minimum-viable Splash.
  *
  * Boot sequence:
  *   1. Log chip info
- *   2. If running partition is PENDING_VERIFY (just OTA'd), run brief
- *      self-test then mark-valid (or roll back on failure).
+ *   2. OTA pending-verify (mark valid or roll back)
  *   3. Bring up I2C0 + scan
- *   4. Init CH422G I/O expander (smoke test: blink backlight)
- *   5. Init SD card (assert CS via CH422G, mount FAT)
- *   6. Check /sdcard/firmware/ for a newer .bin + .sha256 — prompt
- *      user via serial, verify, flash, reboot.
- *   7. If still running, heartbeat every 10s.
+ *   4. Init CH422G I/O expander
+ *   5. Init SD card (mount FAT)
+ *   6. OTA check on SD (auto-install if newer)
+ *   7. Load configuration (SD -> NVS -> defaults, then mirror back)
+ *   8. Bring up display + LVGL + touch reset
+ *   9. Show Splash screen
+ *  10. Heartbeat every 10 s (Splash stays on screen until subsequent
+ *      screens land in follow-up issues)
  *
  * For the v0.1 codebase (full 6-screen LVGL implementation), see tag
  * v0.1.0-archive or branch archive/v0.1.
@@ -37,11 +39,15 @@
 #include "sd_card.h"
 #include "ota.h"
 #include "anchor_config.h"
+#include "display_driver.h"
+#include "touch_driver.h"
+#include "lvgl_init.h"
+#include "screen_splash.h"
 
 static const char *TAG = "anchor_drag_pro";
 
-/* Phase 2D: 0.2.0-dev — I2C + CH422G + SD + OTA */
-#define FIRMWARE_VERSION_STRING "0.2.4"
+/* Phase B (#69) — LVGL infrastructure + Splash */
+#define FIRMWARE_VERSION_STRING "0.2.5"
 
 static void log_chip_info(void)
 {
@@ -145,6 +151,29 @@ void app_main(void)
     static anchor_config_t g_config;
     anchor_config_load(&g_config);
     anchor_config_log(&g_config);
+
+    ESP_LOGI(TAG, "--- Phase B (#69): bring up display + LVGL + Splash ---");
+
+    /* Display panel — bring backlight ON via CH422G before the LCD reset
+     * so the first frame isn't black-on-black. */
+    ch422g_lcd_backlight(true);
+
+    if (display_init() != ESP_OK) {
+        ESP_LOGE(TAG, "display_init failed — proceeding headless (boot continues)");
+    } else if (lvgl_init() != ESP_OK) {
+        ESP_LOGE(TAG, "lvgl_init failed — proceeding headless");
+    } else {
+        /* Touch reset is harmless to attempt even when its full driver
+         * is a stub (milestone 1 of #69). */
+        touch_init();
+
+        /* First and currently only screen. */
+        if (screen_splash_show(FIRMWARE_VERSION_STRING) != ESP_OK) {
+            ESP_LOGE(TAG, "screen_splash_show failed");
+        } else {
+            screen_splash_set_status("System ready.");
+        }
+    }
 
     ESP_LOGI(TAG, "--- Boot complete — heartbeat every 10s ---");
 

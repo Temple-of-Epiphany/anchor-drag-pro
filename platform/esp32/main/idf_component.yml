@@ -1,10 +1,29 @@
 # Managed component dependencies for the ESP-IDF firmware.
+#
 # See docs/library-choices.md for the canonical library set and rationale.
+#
+# Version-pinning strategy (post v0.1 LVGL 8.x ↔ 9.x incident):
+#   - LVGL: hard-pin to 8.4.0. v9 has breaking API changes (LV_COLOR_FORMAT_*
+#     renamed, draw layer reshuffled, font API changes). Migration to 9.x
+#     is a deliberate workstream, not a transitive-upgrade surprise.
+#   - esp_lcd_touch_gt911: pin to ~1.1 (allow patches, no minor jumps)
+#   - dependencies.lock is committed alongside this file to fully freeze
+#     the resolved component set per build.
+#
+# Note: CH422G I/O expander is vendored locally (see main/ch422g.{c,h}) —
+# no managed component exists for it. The library-choices doc previously
+# called for espressif/esp_io_expander_ch422g; that package does not exist
+# in the component registry.
 
 dependencies:
   idf:
     version: ">=5.1.0"
 
-  # Phase 5+ (graphics): touch + LVGL — uncomment when graphics phase begins
-  # espressif/esp_lcd_touch_gt911: "^1"
-  # lvgl/lvgl: "~8.3"
+  # Phase B graphics workstream (#67):
+  # LVGL is pinned to the 8.4 series. The dependencies.lock file pins to
+  # the exact resolved version. Bumping requires a deliberate change.
+  lvgl/lvgl: "==8.4.0"
+
+  # GT911 touch controller — pinned to 1.1.x. Required even when the
+  # touch driver is stubbed because lvgl_init.c includes esp_lcd_touch.h.
+  espressif/esp_lcd_touch_gt911: "~1.1"

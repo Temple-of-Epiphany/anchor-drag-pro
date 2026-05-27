@@ -1,8 +1,10 @@
-# Phase 3 — adds TOML config parser (vendored tomlc99) alongside i2c_bus,
-# ch422g, sd_card, ota.
+# Phase B (#69) — adds LVGL infrastructure (display + LVGL init + minimal
+# splash) on top of the Phase 3 base (i2c_bus, ch422g, sd_card, ota,
+# anchor_config + vendored tomlc99).
 
 idf_component_register(
     SRCS
+        # Core firmware
         "main.c"
         "i2c_bus.c"
         "ch422g.c"
@@ -10,9 +12,17 @@ idf_component_register(
         "ota.c"
         "anchor_config.c"
         "vendor/tomlc99/toml.c"
+
+        # Phase B graphics (#69) — display driver, touch stub, LVGL init,
+        # token-driven splash screen
+        "display_driver.c"
+        "touch_driver.c"
+        "lvgl_init.c"
+        "screen_splash.c"
     INCLUDE_DIRS
         "."
         "vendor/tomlc99"
+        "../../../core/include"          # cross-platform design tokens + strings
     REQUIRES
         # core IDF
         esp_system
@@ -35,6 +45,9 @@ idf_component_register(
         app_update
         esp_partition
         mbedtls
+
+        # Phase B graphics
+        esp_lcd
 )
 
 # Vendored tomlc99 uses isdigit(p[i]) where p[i] is a plain char. ESP-IDF

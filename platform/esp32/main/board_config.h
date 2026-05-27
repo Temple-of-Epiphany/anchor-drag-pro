@@ -21,15 +21,63 @@ extern "C" {
 #define BOARD_NAME              "WaveShare ESP32-S3-Touch-LCD-4.3B"
 #define BOARD_MCU               "ESP32-S3-WROOM-1-N16R8"
 
-/* ---- Display (ST7262 16-bit RGB parallel) — wiring only; init in display driver ---- */
-#define DISPLAY_WIDTH_PX        800
-#define DISPLAY_HEIGHT_PX       480
-#define DISPLAY_PIXEL_CLK_HZ    (16 * 1000 * 1000)
+/* ---- Display (ST7262 16-bit RGB parallel) — wiring only; init in display driver ----
+ *
+ * Pinout, color depth, and timing parameters per WaveShare ESP32-S3-Touch-LCD-4.3B
+ * datasheet + waveshareteam example 08_lvgl_Porting. Board-fixed.
+ */
 
+#define LCD_WIDTH               800
+#define LCD_HEIGHT              480
+#define LCD_COLOR_BITS          16
+#define LCD_RGB_DATA_WIDTH      16
+
+/* Backward-compat aliases used by ESP-IDF examples and some legacy code. */
+#define DISPLAY_WIDTH_PX        LCD_WIDTH
+#define DISPLAY_HEIGHT_PX       LCD_HEIGHT
+
+#define LCD_PIXEL_CLOCK_HZ      (16 * 1000 * 1000)
+#define DISPLAY_PIXEL_CLK_HZ    LCD_PIXEL_CLOCK_HZ
+
+/* Porch timings per panel datasheet. */
+#define LCD_HPW                 4
+#define LCD_HBP                 8
+#define LCD_HFP                 8
+#define LCD_VPW                 4
+#define LCD_VBP                 8
+#define LCD_VFP                 8
+
+/* Bounce buffer = 10 lines @ 800 wide @ 16bpp — minimum that keeps RGB DMA
+ * fed while LVGL renders. */
+#define LCD_BOUNCE_BUFFER_SIZE  (LCD_WIDTH * 10)
+
+/* Control signals. */
 #define LCD_PIN_VSYNC           3
 #define LCD_PIN_HSYNC           46
 #define LCD_PIN_DE              5
 #define LCD_PIN_PCLK            7
+
+/* Blue channel (5 bits: B3..B7 → D0..D4). */
+#define LCD_PIN_B3              14
+#define LCD_PIN_B4              38
+#define LCD_PIN_B5              18
+#define LCD_PIN_B6              17
+#define LCD_PIN_B7              10
+
+/* Green channel (6 bits: G2..G7 → D5..D10). */
+#define LCD_PIN_G2              39
+#define LCD_PIN_G3              0
+#define LCD_PIN_G4              45
+#define LCD_PIN_G5              48
+#define LCD_PIN_G6              47
+#define LCD_PIN_G7              21
+
+/* Red channel (5 bits: R3..R7 → D11..D15). */
+#define LCD_PIN_R3              1
+#define LCD_PIN_R4              2
+#define LCD_PIN_R5              42
+#define LCD_PIN_R6              41
+#define LCD_PIN_R7              40
 
 /* ---- I2C0 (shared bus) ---- */
 #define I2C0_SDA_GPIO           8
