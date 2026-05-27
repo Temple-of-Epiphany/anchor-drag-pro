@@ -14,11 +14,13 @@ idf_component_register(
         "vendor/tomlc99/toml.c"
 
         # Phase B graphics (#69) — display driver, touch stub, LVGL init,
-        # token-driven splash screen
+        # token-driven splash screen, persistent chrome shells, modal stack
         "display_driver.c"
         "touch_driver.c"
         "lvgl_init.c"
         "screen_splash.c"
+        "ui_chrome.c"
+        "ui_modals.c"
     INCLUDE_DIRS
         "."
         "vendor/tomlc99"

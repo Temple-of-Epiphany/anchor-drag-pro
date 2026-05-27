@@ -98,6 +98,48 @@ static void sd_smoke_test(void)
     }
 }
 
+/* Helper: push a splash row update if the splash is up. Pre-display
+ * boot phases also pre-stage their results in a small cache so we can
+ * replay them onto the splash once it appears. */
+typedef struct {
+    splash_row_status_t status;
+    char                detail[64];
+    bool                set;
+} splash_row_cache_t;
+
+static splash_row_cache_t s_row_cache[SPLASH_ROW_COUNT];
+static bool               s_splash_up = false;
+
+static void report_row(splash_row_id_t row, splash_row_status_t status,
+                        const char *fmt, ...)
+{
+    /* Cache + log regardless of whether the splash is on screen. */
+    s_row_cache[row].set    = true;
+    s_row_cache[row].status = status;
+    s_row_cache[row].detail[0] = '\0';
+    if (fmt) {
+        va_list ap;
+        va_start(ap, fmt);
+        vsnprintf(s_row_cache[row].detail,
+                  sizeof(s_row_cache[row].detail), fmt, ap);
+        va_end(ap);
+    }
+    if (s_splash_up) {
+        screen_splash_set_row(row, status, s_row_cache[row].detail);
+    }
+}
+
+static void replay_rows(void)
+{
+    for (int i = 0; i < SPLASH_ROW_COUNT; i++) {
+        if (s_row_cache[i].set) {
+            screen_splash_set_row((splash_row_id_t) i,
+                                   s_row_cache[i].status,
+                                   s_row_cache[i].detail);
+        }
+    }
+}
+
 void app_main(void)
 {
     log_chip_info();
@@ -116,28 +158,46 @@ void app_main(void)
      * mark-valid. If the previous boot was already VALID this is a no-op. */
     ota_handle_pending_verify();
     ota_log_status();
+    /* OTA partition row reflects the running partition state. */
+    report_row(SPLASH_ROW_OTA, SPLASH_STATUS_PASS, "running app, VALID");
 
     ESP_LOGI(TAG, "--- Phase 2A: I2C0 bus init ---");
     if (i2c_bus_init(I2C0_SDA_GPIO, I2C0_SCL_GPIO, I2C0_FREQ_HZ) != ESP_OK) {
         ESP_LOGE(TAG, "i2c_bus_init failed; halting before peripheral init");
+        report_row(SPLASH_ROW_I2C, SPLASH_STATUS_FAIL, "init failed");
         return;
     }
     i2c_bus_scan();
+    report_row(SPLASH_ROW_I2C, SPLASH_STATUS_PASS, "%d Hz", (int) I2C0_FREQ_HZ);
 
     ESP_LOGI(TAG, "--- Phase 2B: CH422G I/O expander init ---");
     if (ch422g_init() != ESP_OK) {
         ESP_LOGE(TAG, "ch422g_init failed; SD and display will be unavailable");
+        report_row(SPLASH_ROW_CH422G, SPLASH_STATUS_FAIL, "init failed");
     } else {
         ch422g_smoke_test();
+        report_row(SPLASH_ROW_CH422G, SPLASH_STATUS_PASS, NULL);
     }
+
+    /* RTC isn't actively probed yet; mark as skip until its driver lands. */
+    report_row(SPLASH_ROW_RTC, SPLASH_STATUS_SKIP, "not implemented");
 
     ESP_LOGI(TAG, "--- Phase 2C: SD card init ---");
     esp_err_t sd_err = sd_card_init();
     if (sd_err != ESP_OK) {
         ESP_LOGW(TAG, "sd_card_init failed: %s — proceeding without SD",
                  esp_err_to_name(sd_err));
+        report_row(SPLASH_ROW_SD, SPLASH_STATUS_FAIL,
+                   "mount failed: %s", esp_err_to_name(sd_err));
     } else {
         sd_smoke_test();
+        uint64_t total = 0, free = 0;
+        if (sd_card_get_usage(&total, &free, NULL) == ESP_OK) {
+            report_row(SPLASH_ROW_SD, SPLASH_STATUS_PASS,
+                       "%llu MB free", free / (1024ULL * 1024ULL));
+        } else {
+            report_row(SPLASH_ROW_SD, SPLASH_STATUS_PASS, NULL);
+        }
     }
 
     ESP_LOGI(TAG, "--- Phase 2D: OTA check on SD ---");
@@ -151,6 +211,15 @@ void app_main(void)
     static anchor_config_t g_config;
     anchor_config_load(&g_config);
     anchor_config_log(&g_config);
+    report_row(SPLASH_ROW_CONFIG, SPLASH_STATUS_PASS,
+               sd_card_is_mounted() ? "from SD" : "from NVS / defaults");
+
+    /* WiFi / GPS / IMU not yet implemented — mark skipped so the user
+     * sees the dash explicitly (rather than an empty row). They'll
+     * transition to RUNNING/PASS once their workstreams land (#59, ...). */
+    report_row(SPLASH_ROW_WIFI, SPLASH_STATUS_SKIP, "not implemented");
+    report_row(SPLASH_ROW_GPS,  SPLASH_STATUS_SKIP, "not implemented");
+    report_row(SPLASH_ROW_IMU,  SPLASH_STATUS_SKIP, "not implemented");
 
     ESP_LOGI(TAG, "--- Phase B (#69): bring up display + LVGL + Splash ---");
 
@@ -160,20 +229,26 @@ void app_main(void)
 
     if (display_init() != ESP_OK) {
         ESP_LOGE(TAG, "display_init failed — proceeding headless (boot continues)");
+        report_row(SPLASH_ROW_DISPLAY, SPLASH_STATUS_FAIL, "init failed");
     } else if (lvgl_init() != ESP_OK) {
         ESP_LOGE(TAG, "lvgl_init failed — proceeding headless");
+        report_row(SPLASH_ROW_DISPLAY, SPLASH_STATUS_FAIL, "lvgl init failed");
     } else {
+        report_row(SPLASH_ROW_DISPLAY, SPLASH_STATUS_PASS,
+                   "%dx%d", LCD_WIDTH, LCD_HEIGHT);
         /* Touch reset is harmless to attempt even when its full driver
          * is a stub (milestone 1 of #69). */
         touch_init();
 
-        /* First and currently only screen. */
         if (screen_splash_show(FIRMWARE_VERSION_STRING) != ESP_OK) {
             ESP_LOGE(TAG, "screen_splash_show failed");
         } else {
-            screen_splash_set_status("System ready.");
+            s_splash_up = true;
+            replay_rows();
         }
     }
+
+    screen_splash_done();
 
     ESP_LOGI(TAG, "--- Boot complete — heartbeat every 10s ---");
 
