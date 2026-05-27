@@ -47,7 +47,7 @@
 static const char *TAG = "anchor_drag_pro";
 
 /* Phase B (#69) — LVGL infrastructure + Splash */
-#define FIRMWARE_VERSION_STRING "0.2.5"
+#define FIRMWARE_VERSION_STRING "0.2.6"
 
 static void log_chip_info(void)
 {
@@ -234,6 +234,17 @@ void app_main(void)
         ESP_LOGE(TAG, "lvgl_init failed — proceeding headless");
         report_row(SPLASH_ROW_DISPLAY, SPLASH_STATUS_FAIL, "lvgl init failed");
     } else {
+        /* CRITICAL: wire the RGB bounce-buffer event to the LVGL VSYNC
+         * notifier. Without this, the flush callback's portMAX_DELAY
+         * wait for VSYNC never returns, the LVGL task holds the mutex
+         * forever, and any screen-load call (e.g. screen_splash_show)
+         * fails with "could not acquire LVGL mutex". Must come AFTER
+         * lvgl_init so the task handle exists by the time the
+         * bounce-buffer ISR fires. */
+        if (display_register_vsync_callback() != ESP_OK) {
+            ESP_LOGE(TAG, "display_register_vsync_callback failed");
+        }
+
         report_row(SPLASH_ROW_DISPLAY, SPLASH_STATUS_PASS,
                    "%dx%d", LCD_WIDTH, LCD_HEIGHT);
         /* Touch reset is harmless to attempt even when its full driver
