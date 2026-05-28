@@ -38,7 +38,7 @@ static const char *TAG = "ota";
  * Kept in sync manually until a generated version.h replaces both. */
 #define RUNNING_VERSION_MAJOR   0
 #define RUNNING_VERSION_MINOR   2
-#define RUNNING_VERSION_PATCH   22
+#define RUNNING_VERSION_PATCH   23
 
 /* Self-test that runs after first boot of a new partition. Currently
  * minimal — we don't have much running code yet. As LVGL / GPS / web UI
@@ -282,31 +282,40 @@ static char prompt_user(const fw_version_t *new_ver, uint32_t timeout_s)
  * Apply — esp_ota_write loop
  * ============================================================ */
 
-static esp_err_t apply_update(const ota_candidate_t *cand)
+static esp_err_t apply_update(const ota_candidate_t *cand,
+                               ota_progress_cb cb, void *user)
 {
     /* Verify SHA first — refuse to flash if the file is corrupt. */
     uint8_t computed[32], expected[32];
 
+    if (cb) cb(OTA_PHASE_VERIFY, 0, "Verifying SHA256", user);
     ESP_LOGI(TAG, "computing SHA256 of %s ...", cand->bin_path);
     esp_err_t err = compute_file_sha256(cand->bin_path, computed);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "hash compute failed");
+        if (cb) cb(OTA_PHASE_ERROR, 0, "Could not read firmware file", user);
         return err;
     }
 
     err = read_sidecar_hash(cand->sha_path, expected);
-    if (err != ESP_OK) return err;
+    if (err != ESP_OK) {
+        if (cb) cb(OTA_PHASE_ERROR, 0, "Could not read .sha256 sidecar", user);
+        return err;
+    }
 
     if (memcmp(computed, expected, 32) != 0) {
         ESP_LOGE(TAG, "SHA256 MISMATCH — refusing to flash corrupt firmware");
+        if (cb) cb(OTA_PHASE_ERROR, 0, "SHA256 mismatch — file corrupt", user);
         return ESP_ERR_INVALID_CRC;
     }
     ESP_LOGI(TAG, "SHA256 verified");
+    if (cb) cb(OTA_PHASE_VERIFY, 100, "SHA256 verified", user);
 
     /* Begin OTA write. */
     const esp_partition_t *target = esp_ota_get_next_update_partition(NULL);
     if (!target) {
         ESP_LOGE(TAG, "no next update partition (OTA not configured?)");
+        if (cb) cb(OTA_PHASE_ERROR, 0, "No OTA partition configured", user);
         return ESP_ERR_NOT_FOUND;
     }
     ESP_LOGI(TAG, "flashing to partition '%s' (offset 0x%lx, size %lu)",
@@ -363,6 +372,7 @@ static esp_err_t apply_update(const ota_candidate_t *cand)
                      (unsigned long) pct,
                      (unsigned long) written,
                      (unsigned long) total_bytes);
+            if (cb) cb(OTA_PHASE_FLASH, (int) pct, "Flashing", user);
             next_pct_log = pct + 5;
         }
     }
@@ -373,22 +383,26 @@ static esp_err_t apply_update(const ota_candidate_t *cand)
         ESP_LOGE(TAG, "short write: %lu / %lu",
                  (unsigned long) written, (unsigned long) total_bytes);
         esp_ota_abort(handle);
+        if (cb) cb(OTA_PHASE_ERROR, 0, "Short write — flash incomplete", user);
         return ESP_FAIL;
     }
 
     err = esp_ota_end(handle);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "esp_ota_end: %s", esp_err_to_name(err));
+        if (cb) cb(OTA_PHASE_ERROR, 0, "Image validation failed", user);
         return err;
     }
 
     err = esp_ota_set_boot_partition(target);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "set_boot_partition: %s", esp_err_to_name(err));
+        if (cb) cb(OTA_PHASE_ERROR, 0, "Could not set boot partition", user);
         return err;
     }
 
     ESP_LOGI(TAG, "OTA complete — rebooting into new firmware in 2 seconds");
+    if (cb) cb(OTA_PHASE_DONE, 100, "Update complete — rebooting", user);
     vTaskDelay(pdMS_TO_TICKS(2000));
     esp_restart();
     return ESP_OK; /* unreached */
@@ -506,12 +520,63 @@ esp_err_t ota_check_and_apply_from_sd(void)
                   "touchscreen prompt returns when graphics phase lands)",
              cand.version.major, cand.version.minor, cand.version.patch);
 
-    err = apply_update(&cand);
+    err = apply_update(&cand, NULL, NULL);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "update failed: %s — continuing boot on current firmware",
                  esp_err_to_name(err));
     }
     return err;
+}
+
+esp_err_t ota_scan_sd(ota_update_info_t *info)
+{
+    if (!info) return ESP_ERR_INVALID_ARG;
+    memset(info, 0, sizeof(*info));
+    info->running_major = RUNNING_VERSION_MAJOR;
+    info->running_minor = RUNNING_VERSION_MINOR;
+    info->running_patch = RUNNING_VERSION_PATCH;
+
+    if (!sd_card_is_mounted()) {
+        ESP_LOGW(TAG, "SD not mounted — cannot scan for update");
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    ota_candidate_t cand = {0};
+    esp_err_t err = scan_for_candidate(&cand);
+    if (err == ESP_ERR_NOT_FOUND) {
+        ESP_LOGI(TAG, "scan: no firmware on SD");
+        return ESP_OK;          /* info->available stays false */
+    }
+    if (err != ESP_OK) return err;
+
+    info->new_major = cand.version.major;
+    info->new_minor = cand.version.minor;
+    info->new_patch = cand.version.patch;
+    strncpy(info->bin_path, cand.bin_path, sizeof(info->bin_path) - 1);
+    strncpy(info->sha_path, cand.sha_path, sizeof(info->sha_path) - 1);
+
+    fw_version_t running = {
+        RUNNING_VERSION_MAJOR, RUNNING_VERSION_MINOR, RUNNING_VERSION_PATCH
+    };
+    info->available = (version_cmp(&cand.version, &running) > 0);
+    ESP_LOGI(TAG, "scan: found v%d.%d.%d (running v%d.%d.%d) — %s",
+             cand.version.major, cand.version.minor, cand.version.patch,
+             running.major, running.minor, running.patch,
+             info->available ? "newer" : "not newer");
+    return ESP_OK;
+}
+
+esp_err_t ota_apply(const ota_update_info_t *info,
+                     ota_progress_cb cb, void *user)
+{
+    if (!info || !info->available) return ESP_ERR_INVALID_ARG;
+    ota_candidate_t cand = {0};
+    strncpy(cand.bin_path, info->bin_path, sizeof(cand.bin_path) - 1);
+    strncpy(cand.sha_path, info->sha_path, sizeof(cand.sha_path) - 1);
+    cand.version.major = info->new_major;
+    cand.version.minor = info->new_minor;
+    cand.version.patch = info->new_patch;
+    return apply_update(&cand, cb, user);   /* reboots on success */
 }
 
 void ota_log_status(void)

@@ -15,6 +15,8 @@
 #include "ui_chrome.h"
 #include "ui_tokens.h"
 #include "ui_confirm.h"
+#include "ui_ota.h"
+#include "ota.h"
 #include "lvgl_init.h"
 #include "esp_log.h"
 #include "esp_system.h"
@@ -247,6 +249,99 @@ static void on_clear_logs_clicked(lv_event_t *e)
     ui_confirm_show(&p);
 }
 
+/* ---- OTA: check for update + install with progress ---- */
+
+/* Single-instance OTA flow. The scanned candidate is held here so the
+ * install worker (a separate task) can read it after the user confirms. */
+static ota_update_info_t s_ota_info;
+
+/* Runs on the worker task. Maps ota.c progress phases onto the modal.
+ * ui_ota_* lock LVGL internally, so calling them off the LVGL task is
+ * safe. ota_apply() reboots on success and never returns. */
+static void ota_progress_trampoline(ota_phase_t phase, int pct,
+                                     const char *msg, void *user)
+{
+    (void) user;
+    switch (phase) {
+        case OTA_PHASE_VERIFY: ui_ota_set_progress("Verifying", pct); break;
+        case OTA_PHASE_FLASH:  ui_ota_set_progress("Flashing",  pct); break;
+        case OTA_PHASE_DONE:   ui_ota_set_progress("Rebooting", 100); break;
+        case OTA_PHASE_ERROR:  ui_ota_show_error(msg);                break;
+    }
+}
+
+static void ota_install_task(void *arg)
+{
+    (void) arg;
+    esp_err_t err = ota_apply(&s_ota_info, ota_progress_trampoline, NULL);
+    /* Only reached on failure — success reboots inside ota_apply. The
+     * error phase is already shown via the trampoline. */
+    ESP_LOGE(TAG, "ota_apply returned %s (failed)", esp_err_to_name(err));
+    vTaskDelete(NULL);
+}
+
+static void on_ota_install(void *user_data)
+{
+    (void) user_data;
+    ui_ota_begin_progress();
+    /* 8 KB stack: SHA256 + esp_ota_write + FATFS read path. */
+    if (xTaskCreate(ota_install_task, "ota_install", 8192, NULL, 4, NULL) != pdPASS) {
+        ESP_LOGE(TAG, "could not start OTA install task");
+        ui_ota_show_error("Could not start the update task");
+    }
+}
+
+static void show_info_dialog(const char *title, const char *line)
+{
+    ui_confirm_params_t p = {
+        .title         = title,
+        .body          = { line, NULL },
+        .final_warning = NULL,
+        .cancel_label  = "Close",
+        .confirm_label = "OK",
+        .hold_ms       = 0,
+        .severity      = UI_CONFIRM_LOW,
+        .on_confirm    = NULL,
+    };
+    ui_confirm_show(&p);
+}
+
+static void on_check_update_clicked(lv_event_t *e)
+{
+    (void) e;
+    esp_err_t err = ota_scan_sd(&s_ota_info);
+    if (err == ESP_ERR_INVALID_STATE) {
+        show_info_dialog("Check for update", "SD card is not mounted.");
+        return;
+    }
+    if (err != ESP_OK) {
+        show_info_dialog("Check for update", "Could not read the SD card.");
+        return;
+    }
+    if (!s_ota_info.available) {
+        char buf[80];
+        snprintf(buf, sizeof(buf), "Firmware is up to date (v%d.%d.%d).",
+                 s_ota_info.running_major, s_ota_info.running_minor,
+                 s_ota_info.running_patch);
+        show_info_dialog("Check for update", buf);
+        return;
+    }
+    ui_ota_params_t p = {
+        .from_major = s_ota_info.running_major,
+        .from_minor = s_ota_info.running_minor,
+        .from_patch = s_ota_info.running_patch,
+        .to_major   = s_ota_info.new_major,
+        .to_minor   = s_ota_info.new_minor,
+        .to_patch   = s_ota_info.new_patch,
+        .notes      = "A newer firmware build was found on the SD card. "
+                      "Installing takes about 30 seconds and reboots the device.",
+        .on_install = on_ota_install,
+        .on_skip    = NULL,
+        .user_data  = NULL,
+    };
+    ui_ota_show(&p);
+}
+
 /* ---- Construction ---- */
 
 lv_obj_t *screen_diagnostics_create(void)
@@ -299,6 +394,8 @@ lv_obj_t *screen_diagnostics_create(void)
     snprintf(heap_buf, sizeof(heap_buf), "%lu KB",
              (unsigned long) (esp_get_free_heap_size() / 1024));
     st->heap_value_lbl = kv_row(system, "Free heap", heap_buf);
+    action_row(system, "Check for update", "scan SD for newer firmware",
+                on_check_update_clicked, NULL, false);
 
     /* ---- Live data ---- */
     lv_obj_t *live = build_section(content, "Live data", false);

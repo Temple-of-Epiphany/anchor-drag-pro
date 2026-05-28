@@ -30,6 +30,7 @@ idf_component_register(
         "ui_confirm.c"
         "ui_preset_picker.c"
         "ui_alarm.c"
+        "ui_ota.c"
         "ui_wifi_password.c"
         "screen_wifi.c"
 
