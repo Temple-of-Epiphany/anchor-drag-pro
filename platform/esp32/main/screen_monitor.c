@@ -20,12 +20,14 @@
 #include "ui_confirm.h"
 #include "lvgl_init.h"
 #include "anchor_config.h"
+#include "anchor_geo.h"
 #include "gps_source.h"
 #include "wifi_manager.h"
 #include "anchor_state.h"
 #include "ui_alarm.h"
 #include "esp_log.h"
 #include "lvgl.h"
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -43,7 +45,11 @@ typedef struct {
     lv_obj_t *footer;
     lv_obj_t *banner;
     lv_obj_t *plot_canvas;
-    lv_obj_t *plot_placeholder_label;
+    lv_obj_t *plot_placeholder_label; /* shown OFF/ON/ARMING + when no fix */
+    lv_obj_t *plot_alarm_circle;      /* circular outline at alarm radius */
+    lv_obj_t *plot_centroid;          /* anchor position dot */
+    lv_obj_t *plot_boat;              /* current boat position dot */
+    lv_obj_t *plot_scale_label;       /* bottom-left "± N ft" scale */
     lv_obj_t *distance_label;
     lv_obj_t *distance_template_label;
     lv_obj_t *btn_action;
@@ -51,6 +57,17 @@ typedef struct {
     ui_state_pill_t current_state;
     lv_timer_t *refresh;
 } monitor_state_t;
+
+/* Plot canvas geometry — kept in sync with the lv_obj_set_size call
+ * in screen_monitor_create. Centre = (PLOT_W/2, PLOT_H/2). */
+#define PLOT_W           476
+#define PLOT_H           (480 - 152)  /* LV_VER_RES - 152 */
+#define PLOT_CX          (PLOT_W / 2)
+#define PLOT_CY          (PLOT_H / 2)
+/* Margin so the alarm circle never touches the canvas edge. */
+#define PLOT_USABLE_R    ((PLOT_H / 2) - 18)
+#define PLOT_DOT_BOAT    14
+#define PLOT_DOT_ANCHOR  16
 
 static monitor_state_t *get_state(lv_obj_t *m)
 {
@@ -240,6 +257,54 @@ lv_obj_t *screen_monitor_create(void)
     lv_obj_add_flag              (st->plot_canvas, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb          (st->plot_canvas, on_plot_canvas_clicked, LV_EVENT_CLICKED, st);
 
+    /* Alarm circle outline — circular lv_obj with border but no fill.
+     * Sized + positioned each refresh from anchor_state.alarm_distance_m. */
+    st->plot_alarm_circle = lv_obj_create(st->plot_canvas);
+    lv_obj_set_size(st->plot_alarm_circle, 100, 100);
+    lv_obj_set_style_bg_opa      (st->plot_alarm_circle, LV_OPA_TRANSP,            LV_PART_MAIN);
+    lv_obj_set_style_border_color(st->plot_alarm_circle, UI_COLOR(STATE_ARMED),    LV_PART_MAIN);
+    lv_obj_set_style_border_width(st->plot_alarm_circle, 2,                        LV_PART_MAIN);
+    lv_obj_set_style_radius      (st->plot_alarm_circle, LV_RADIUS_CIRCLE,         LV_PART_MAIN);
+    lv_obj_set_style_pad_all     (st->plot_alarm_circle, 0,                        LV_PART_MAIN);
+    lv_obj_clear_flag            (st->plot_alarm_circle, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_clear_flag            (st->plot_alarm_circle, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_flag              (st->plot_alarm_circle, LV_OBJ_FLAG_HIDDEN);
+
+    /* Centroid (anchor) marker. */
+    st->plot_centroid = lv_obj_create(st->plot_canvas);
+    lv_obj_set_size(st->plot_centroid, PLOT_DOT_ANCHOR, PLOT_DOT_ANCHOR);
+    lv_obj_set_style_bg_color    (st->plot_centroid, UI_COLOR(ACTION_PRIMARY),     LV_PART_MAIN);
+    lv_obj_set_style_bg_opa      (st->plot_centroid, LV_OPA_COVER,                 LV_PART_MAIN);
+    lv_obj_set_style_border_color(st->plot_centroid, UI_COLOR(TEXT_BODY_STRONG),   LV_PART_MAIN);
+    lv_obj_set_style_border_width(st->plot_centroid, 2,                            LV_PART_MAIN);
+    lv_obj_set_style_radius      (st->plot_centroid, LV_RADIUS_CIRCLE,             LV_PART_MAIN);
+    lv_obj_set_style_pad_all     (st->plot_centroid, 0,                            LV_PART_MAIN);
+    lv_obj_clear_flag            (st->plot_centroid, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_clear_flag            (st->plot_centroid, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_flag              (st->plot_centroid, LV_OBJ_FLAG_HIDDEN);
+
+    /* Boat marker — colour updated per-state in the refresh callback. */
+    st->plot_boat = lv_obj_create(st->plot_canvas);
+    lv_obj_set_size(st->plot_boat, PLOT_DOT_BOAT, PLOT_DOT_BOAT);
+    lv_obj_set_style_bg_color    (st->plot_boat, UI_COLOR(STATE_ARMED),            LV_PART_MAIN);
+    lv_obj_set_style_bg_opa      (st->plot_boat, LV_OPA_COVER,                     LV_PART_MAIN);
+    lv_obj_set_style_border_color(st->plot_boat, UI_COLOR(TEXT_BODY_STRONG),       LV_PART_MAIN);
+    lv_obj_set_style_border_width(st->plot_boat, 2,                                LV_PART_MAIN);
+    lv_obj_set_style_radius      (st->plot_boat, LV_RADIUS_CIRCLE,                 LV_PART_MAIN);
+    lv_obj_set_style_pad_all     (st->plot_boat, 0,                                LV_PART_MAIN);
+    lv_obj_clear_flag            (st->plot_boat, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_clear_flag            (st->plot_boat, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_flag              (st->plot_boat, LV_OBJ_FLAG_HIDDEN);
+
+    /* Scale legend — bottom-left of plot. Updated each refresh. */
+    st->plot_scale_label = lv_label_create(st->plot_canvas);
+    lv_label_set_text(st->plot_scale_label, "");
+    lv_obj_set_style_text_color(st->plot_scale_label, UI_COLOR(TEXT_DIM),          LV_PART_MAIN);
+    lv_obj_set_style_text_font (st->plot_scale_label, &lv_font_montserrat_14,      LV_PART_MAIN);
+    lv_obj_align(st->plot_scale_label, LV_ALIGN_BOTTOM_LEFT, 8, -8);
+    lv_obj_add_flag(st->plot_scale_label, LV_OBJ_FLAG_HIDDEN);
+
+    /* Placeholder text — shown OFF/ON/ARMING and when there's no fix. */
     st->plot_placeholder_label = lv_label_create(st->plot_canvas);
     lv_label_set_text(st->plot_placeholder_label, "NO GPS\nanchor watch unavailable");
     lv_obj_set_style_text_color(st->plot_placeholder_label, UI_COLOR(TEXT_DIM),          LV_PART_MAIN);
@@ -399,6 +464,12 @@ void screen_monitor_refresh_cb(lv_timer_t *t)
     lv_obj_t *scr = (lv_obj_t *) t->user_data;
     monitor_state_t *st = get_state(scr);
     if (!st) return;
+    /* Only do work when Monitor is the active screen. The widgets still
+     * exist when the user has swiped away (lv_scr_load doesn't free
+     * the previous screen) but invoking layout/style writes on a
+     * non-active screen with an open modal elsewhere has reproduced a
+     * LoadProhibited in the GDMA TX ISR. Cheaper to just skip. */
+    if (lv_scr_act() != scr) return;
 
     /* Header status icons. */
     wifi_mgr_status_t w;
@@ -468,43 +539,101 @@ void screen_monitor_refresh_cb(lv_timer_t *t)
             break;
     }
 
-    /* Plot placeholder — show centroid + current distance during
-     * ARMED, raw lat/lon during OFF/ON, sample count during ARMING. */
+    /* Plot canvas — three modes:
+     *  ARMED/ALARM/MUTED + centroid + fix  : draw circle, centroid, boat
+     *  ARMING / no-fix / OFF / ON          : hide plot, show status text
+     */
     gps_fix_t f; gps_source_get(&f);
-    if (as.state == AS_ARMED || as.state == AS_ALARM || as.state == AS_MUTED) {
-        if (as.centroid_valid && f.pos_valid) {
-            snprintf(buf, sizeof(buf),
-                     "ANCHOR @ %.5f, %.5f\nBOAT   @ %.5f, %.5f\nDistance %.1f m",
-                     as.centroid.lat, as.centroid.lon,
-                     f.latitude, f.longitude,
-                     as.current_distance_m);
-        } else {
-            snprintf(buf, sizeof(buf), "(waiting for fix)");
-        }
-        lv_label_set_text(st->plot_placeholder_label, buf);
-        lv_obj_set_style_text_color(st->plot_placeholder_label,
+    bool show_plot = (as.state == AS_ARMED || as.state == AS_ALARM ||
+                      as.state == AS_MUTED) &&
+                     as.centroid_valid && f.pos_valid;
+
+    if (show_plot) {
+        /* Hide the text labels. */
+        lv_obj_add_flag(st->plot_placeholder_label, LV_OBJ_FLAG_HIDDEN);
+        /* Show plot widgets. */
+        lv_obj_clear_flag(st->plot_alarm_circle, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(st->plot_centroid,     LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(st->plot_boat,         LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(st->plot_scale_label,  LV_OBJ_FLAG_HIDDEN);
+
+        /* Compute boat offset from centroid in metres (E/N). */
+        geo_point_t boat = { .lat = f.latitude, .lon = f.longitude };
+        double dx_m = 0, dy_m = 0;
+        anchor_geo_offset_m(as.centroid, boat, &dx_m, &dy_m);
+
+        /* Scale: alarm circle takes up ~70% of the usable radius unless
+         * the boat is further out (then expand to fit the boat with 15%
+         * margin). Keeps the boat dot on-screen even mid-drag. */
+        double boat_m = sqrt(dx_m * dx_m + dy_m * dy_m);
+        double extent_m = (boat_m > as.alarm_distance_m)
+                              ? boat_m * 1.15
+                              : as.alarm_distance_m / 0.70;
+        if (extent_m < 1.0) extent_m = 1.0;  /* avoid divide-by-zero */
+        double px_per_m = (double) PLOT_USABLE_R / extent_m;
+
+        /* Alarm circle. */
+        int r_px = (int) (as.alarm_distance_m * px_per_m);
+        if (r_px < 4) r_px = 4;
+        lv_obj_set_size(st->plot_alarm_circle, r_px * 2, r_px * 2);
+        lv_obj_set_pos (st->plot_alarm_circle,
+                        PLOT_CX - r_px, PLOT_CY - r_px);
+        lv_obj_set_style_border_color(st->plot_alarm_circle,
             (as.state == AS_ALARM) ? UI_COLOR(STATE_ALARM) : UI_COLOR(STATE_ARMED),
             LV_PART_MAIN);
-    } else if (as.state == AS_ARMING) {
-        snprintf(buf, sizeof(buf), "ARMING\nsamples %d / %d",
-                 as.arming_samples, as.arming_target);
-        lv_label_set_text(st->plot_placeholder_label, buf);
-        lv_obj_set_style_text_color(st->plot_placeholder_label,
-                                     UI_COLOR(STATE_ARMING), LV_PART_MAIN);
-    } else if (gps_fresh && f.pos_valid) {
-        snprintf(buf, sizeof(buf),
-                 "GPS LIVE\n%.5f, %.5f\n%d sats   %.1f kts",
-                 f.latitude, f.longitude,
-                 f.satellites,
-                 f.sog_valid ? f.sog_kts : 0.0);
-        lv_label_set_text(st->plot_placeholder_label, buf);
-        lv_obj_set_style_text_color(st->plot_placeholder_label,
-                                     UI_COLOR(STATE_ARMED), LV_PART_MAIN);
+
+        /* Centroid dot centred. */
+        lv_obj_set_pos(st->plot_centroid,
+                        PLOT_CX - PLOT_DOT_ANCHOR / 2,
+                        PLOT_CY - PLOT_DOT_ANCHOR / 2);
+
+        /* Boat dot — y inverted (screen y grows downward, north is up). */
+        int boat_x = PLOT_CX + (int) (dx_m * px_per_m) - PLOT_DOT_BOAT / 2;
+        int boat_y = PLOT_CY - (int) (dy_m * px_per_m) - PLOT_DOT_BOAT / 2;
+        lv_obj_set_pos(st->plot_boat, boat_x, boat_y);
+        lv_obj_set_style_bg_color(st->plot_boat,
+            (as.state == AS_ALARM) ? UI_COLOR(STATE_ALARM) : UI_COLOR(STATE_ARMED),
+            LV_PART_MAIN);
+
+        /* Scale legend — half-width of the canvas in feet. */
+        double half_width_m = (double) PLOT_CX / px_per_m;
+        snprintf(buf, sizeof(buf), "scale ±%.0f ft", half_width_m * 3.28084);
+        lv_label_set_text(st->plot_scale_label, buf);
     } else {
-        lv_label_set_text(st->plot_placeholder_label,
-                          "NO GPS\nanchor watch unavailable");
-        lv_obj_set_style_text_color(st->plot_placeholder_label,
-                                     UI_COLOR(TEXT_DIM), LV_PART_MAIN);
+        /* Hide plot widgets. */
+        lv_obj_add_flag(st->plot_alarm_circle, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(st->plot_centroid,     LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(st->plot_boat,         LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(st->plot_scale_label,  LV_OBJ_FLAG_HIDDEN);
+        /* Show text status. */
+        lv_obj_clear_flag(st->plot_placeholder_label, LV_OBJ_FLAG_HIDDEN);
+
+        if (as.state == AS_ARMING) {
+            snprintf(buf, sizeof(buf), "ARMING\nsamples %d / %d",
+                     as.arming_samples, as.arming_target);
+            lv_label_set_text(st->plot_placeholder_label, buf);
+            lv_obj_set_style_text_color(st->plot_placeholder_label,
+                                         UI_COLOR(STATE_ARMING), LV_PART_MAIN);
+        } else if ((as.state == AS_ARMED || as.state == AS_ALARM ||
+                    as.state == AS_MUTED) && !f.pos_valid) {
+            lv_label_set_text(st->plot_placeholder_label, "(waiting for fix)");
+            lv_obj_set_style_text_color(st->plot_placeholder_label,
+                                         UI_COLOR(STATE_WARNING), LV_PART_MAIN);
+        } else if (gps_fresh && f.pos_valid) {
+            snprintf(buf, sizeof(buf),
+                     "GPS LIVE\n%.5f, %.5f\n%d sats   %.1f kts",
+                     f.latitude, f.longitude,
+                     f.satellites,
+                     f.sog_valid ? f.sog_kts : 0.0);
+            lv_label_set_text(st->plot_placeholder_label, buf);
+            lv_obj_set_style_text_color(st->plot_placeholder_label,
+                                         UI_COLOR(STATE_ARMED), LV_PART_MAIN);
+        } else {
+            lv_label_set_text(st->plot_placeholder_label,
+                              "NO GPS\nanchor watch unavailable");
+            lv_obj_set_style_text_color(st->plot_placeholder_label,
+                                         UI_COLOR(TEXT_DIM), LV_PART_MAIN);
+        }
     }
 }
 

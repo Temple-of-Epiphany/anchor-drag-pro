@@ -199,8 +199,12 @@ esp_err_t tcp_gateway_start(const char *host, int port)
         xSemaphoreGive(s_mtx);
     }
     if (s_task) return ESP_OK;
+    /* 6 KB stack: the full ingest chain is gateway_task -> on_line ->
+     * gps_source_ingest_nmea -> main_on_gps_fix -> anchor_state_on_fix,
+     * plus nmea0183 parser locals and lwip recv buffers. 4 KB sat
+     * uncomfortably close to the canary; 6 KB gives meaningful margin. */
     BaseType_t r = xTaskCreatePinnedToCore(gateway_task, "tcp_gw",
-                                            4096, NULL, 4, &s_task, 0);
+                                            6144, NULL, 4, &s_task, 0);
     return (r == pdPASS) ? ESP_OK : ESP_FAIL;
 }
 

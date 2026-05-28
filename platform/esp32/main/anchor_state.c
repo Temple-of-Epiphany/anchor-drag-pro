@@ -154,9 +154,17 @@ void anchor_state_on_fix(geo_point_t pos, bool fix_valid)
         bool time_done       = (elapsed_us / 1000000ULL) >= (uint64_t) s_m.arming_seconds;
         bool samples_done    = anchor_geo_buf_size(&s_m.buf) >= MIN_ARMING_SAMPLES;
         if (time_done && samples_done) {
-            /* Compute centroid + transition. */
+            /* Compute centroid + transition.
+             *
+             * snap[] is static because ANCHOR_GEO_BUF_MAX (256) ×
+             * sizeof(geo_point_t) (16) = 4 KB — the same as the
+             * tcp_gw task's entire stack. A stack-resident copy
+             * overflows on the very first ARMING completion and
+             * corrupts the next ISR's working memory (manifested
+             * as a wild-address LoadProhibited in the GDMA TX ISR).
+             * Access is serialised by s_mtx held above. */
             geo_point_t centre;
-            geo_point_t snap[ANCHOR_GEO_BUF_MAX];
+            static geo_point_t snap[ANCHOR_GEO_BUF_MAX];
             size_t n = anchor_geo_buf_snapshot(&s_m.buf, snap, ANCHOR_GEO_BUF_MAX);
             if (anchor_geo_centroid(snap, n, &centre)) {
                 s_m.centroid       = centre;

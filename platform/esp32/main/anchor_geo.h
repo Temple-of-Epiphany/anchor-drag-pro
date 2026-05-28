@@ -46,6 +46,13 @@ bool   anchor_geo_centroid(const geo_point_t *samples, size_t n,
 double anchor_geo_max_radius_m(const geo_point_t *samples, size_t n,
                                 geo_point_t centre);
 
+/* Signed local-tangent-plane offset from `from` to `to`, in metres.
+ * Positive `dx_east_m` means `to` is east of `from`; positive
+ * `dy_north_m` means `to` is north of `from`. Uses the same
+ * equirectangular projection as anchor_geo_distance_m. */
+void anchor_geo_offset_m(geo_point_t from, geo_point_t to,
+                          double *dx_east_m, double *dy_north_m);
+
 /* ---- Bounded sample ring buffer ----
  *
  * The state-machine collects up to ANCHOR_GEO_BUF_MAX samples during

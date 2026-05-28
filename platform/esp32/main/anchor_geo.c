@@ -51,6 +51,19 @@ double anchor_geo_max_radius_m(const geo_point_t *samples, size_t n,
     return max_d;
 }
 
+void anchor_geo_offset_m(geo_point_t from, geo_point_t to,
+                          double *dx_east_m, double *dy_north_m)
+{
+    double mid_lat = ((from.lat + to.lat) * 0.5) * DEG_TO_RAD;
+    if (dy_north_m) {
+        *dy_north_m = EARTH_RADIUS_M * (to.lat - from.lat) * DEG_TO_RAD;
+    }
+    if (dx_east_m) {
+        *dx_east_m  = EARTH_RADIUS_M * (to.lon - from.lon) * DEG_TO_RAD
+                      * cos(mid_lat);
+    }
+}
+
 /* ---- Sample buffer ---- */
 
 void anchor_geo_buf_reset(anchor_geo_buf_t *b)
