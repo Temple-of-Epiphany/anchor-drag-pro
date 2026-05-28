@@ -22,6 +22,8 @@
 #include "anchor_config.h"
 #include "gps_source.h"
 #include "wifi_manager.h"
+#include "anchor_state.h"
+#include "ui_alarm.h"
 #include "esp_log.h"
 #include "lvgl.h"
 #include <stdio.h>
@@ -88,20 +90,10 @@ static action_btn_style_t action_for_state(ui_state_pill_t s)
 /* Confirm callback for DISARM-while-armed. */
 static void on_disarm_confirmed(void *user_data)
 {
-    monitor_state_t *st = (monitor_state_t *) user_data;
-    if (!st) return;
-    ESP_LOGI(TAG, "DISARM confirmed → state OFF (state-machine wiring TODO)");
-    /* Real implementation will transition the state machine. For now,
-     * just reflect OFF in the UI so the user sees their action. */
-    if (!lvgl_lock(500)) return;
-    st->current_state = UI_STATE_PILL_OFF;
-    ui_header_set_state_pill(st->header, UI_STATE_PILL_OFF);
-    action_btn_style_t a = action_for_state(UI_STATE_PILL_OFF);
-    lv_obj_set_style_bg_color(st->btn_action, a.color, LV_PART_MAIN);
-    lv_label_set_text(st->btn_action_label, a.label);
-    lv_label_set_text(st->distance_label, "Tap ARM when ready");
-    lv_label_set_text(st->distance_template_label, "");
-    lvgl_unlock();
+    (void) user_data;
+    ESP_LOGI(TAG, "DISARM confirmed");
+    anchor_state_disarm();
+    /* UI updates via the refresh timer reading anchor_state_get. */
 }
 
 static void on_action_btn_clicked(lv_event_t *e)
@@ -110,34 +102,18 @@ static void on_action_btn_clicked(lv_event_t *e)
     if (!st) return;
     ESP_LOGI(TAG, "action button clicked in state=%d", (int) st->current_state);
 
+    /* Hand to the state machine — refresh timer picks up the new
+     * state on the next tick (within 1 s). */
     switch (st->current_state) {
         case UI_STATE_PILL_OFF:
-        case UI_STATE_PILL_ON: {
-            /* ARM — transition to ARMING (state machine TODO; just reflect
-             * the visual transition for now). */
-            ESP_LOGI(TAG, "ARM tapped — transitioning to ARMING (visual only)");
-            st->current_state = UI_STATE_PILL_ARMING;
-            ui_header_set_state_pill(st->header, UI_STATE_PILL_ARMING);
-            action_btn_style_t a = action_for_state(UI_STATE_PILL_ARMING);
-            lv_obj_set_style_bg_color(st->btn_action, a.color, LV_PART_MAIN);
-            lv_label_set_text(st->btn_action_label, a.label);
-            lv_label_set_text(st->distance_label, "Collecting samples...");
+        case UI_STATE_PILL_ON:
+            anchor_state_arm();
             break;
-        }
-        case UI_STATE_PILL_ARMING: {
-            /* CANCEL — back to OFF. */
-            ESP_LOGI(TAG, "CANCEL tapped — back to OFF");
-            st->current_state = UI_STATE_PILL_OFF;
-            ui_header_set_state_pill(st->header, UI_STATE_PILL_OFF);
-            action_btn_style_t a = action_for_state(UI_STATE_PILL_OFF);
-            lv_obj_set_style_bg_color(st->btn_action, a.color, LV_PART_MAIN);
-            lv_label_set_text(st->btn_action_label, a.label);
-            lv_label_set_text(st->distance_label, "Tap ARM when ready");
+        case UI_STATE_PILL_ARMING:
+            anchor_state_cancel();
             break;
-        }
         case UI_STATE_PILL_ARMED:
         case UI_STATE_PILL_MUTED: {
-            /* DISARM — hold to confirm (1 s, low-severity per spec). */
             ui_confirm_params_t params = {
                 .title         = "DISARM anchor watch?",
                 .body          = { "The alarm will no longer trigger if the boat drifts.", NULL },
@@ -152,16 +128,10 @@ static void on_action_btn_clicked(lv_event_t *e)
             ui_confirm_show(&params);
             break;
         }
-        case UI_STATE_PILL_ALARM: {
-            /* MUTE — single tap, no confirm. State machine wiring TODO. */
-            ESP_LOGI(TAG, "MUTE tapped — silencing (visual only)");
-            st->current_state = UI_STATE_PILL_MUTED;
-            ui_header_set_state_pill(st->header, UI_STATE_PILL_MUTED);
-            action_btn_style_t a = action_for_state(UI_STATE_PILL_MUTED);
-            lv_obj_set_style_bg_color(st->btn_action, a.color, LV_PART_MAIN);
-            lv_label_set_text(st->btn_action_label, a.label);
+        case UI_STATE_PILL_ALARM:
+            anchor_state_mute();
+            ui_alarm_set_muted(true);
             break;
-        }
         default: break;
     }
 }
@@ -423,11 +393,7 @@ void screen_monitor_set_boat_name(lv_obj_t *monitor, const char *name)
     lvgl_unlock();
 }
 
-/* Periodic poll of gps_source + wifi_manager. Mirrors the Connections
- * screen's refresh pattern. Updates:
- *   - Header GPS icon: green when gps fresh, dim when stale/absent
- *   - Header WiFi icon: green when connected, dim otherwise
- *   - Plot placeholder text: replaced by current lat/lon when fresh */
+/* Periodic poll of gps_source + wifi_manager + anchor_state. */
 void screen_monitor_refresh_cb(lv_timer_t *t)
 {
     lv_obj_t *scr = (lv_obj_t *) t->user_data;
@@ -443,22 +409,94 @@ void screen_monitor_refresh_cb(lv_timer_t *t)
     bool gps_fresh = gps_source_is_fresh(5000);
     ui_header_set_icon_gps(st->header, gps_fresh ? UI_ICON_OK : UI_ICON_OFF);
 
-    /* Plot placeholder: show live coords when fresh, fall back to
-     * "NO GPS" when absent. The full anchor-circle plot lands once
-     * the ARMED state machine + per-fix sample buffer exist. */
-    if (gps_fresh) {
-        gps_fix_t f;
-        gps_source_get(&f);
-        char buf[80];
-        if (f.pos_valid) {
-            snprintf(buf, sizeof(buf),
-                     "GPS LIVE\n%.5f, %.5f\n%d sats   %.1f kts",
-                     f.latitude, f.longitude,
-                     f.satellites,
-                     f.sog_valid ? f.sog_kts : 0.0);
-        } else {
-            snprintf(buf, sizeof(buf), "GPS LIVE\n(waiting for fix)");
+    /* Anchor state machine snapshot. */
+    anchor_state_snapshot_t as;
+    anchor_state_get(&as);
+    ui_state_pill_t pill = anchor_state_to_pill(as.state);
+    if (pill != st->current_state) {
+        st->current_state = pill;
+        ui_header_set_state_pill(st->header, pill);
+        action_btn_style_t a = action_for_state(pill);
+        lv_obj_set_style_bg_color(st->btn_action, a.color, LV_PART_MAIN);
+        lv_label_set_text(st->btn_action_label, a.label);
+
+        /* Fire / dismiss the Alarm modal on transitions. */
+        if (pill == UI_STATE_PILL_ALARM) {
+            ui_alarm_params_t ap = {
+                .distance_value = as.current_distance_m * 3.28084, /* metres → feet */
+                .distance_unit  = "ft",
+                .threshold      = as.alarm_distance_m * 3.28084,
+                .heading_deg    = -1,
+                .rot_dps        = -2147483647,
+            };
+            ui_alarm_show(&ap);
+        } else if (pill == UI_STATE_PILL_OFF || pill == UI_STATE_PILL_ON) {
+            ui_alarm_dismiss();
         }
+    }
+
+    /* Distance readout — state-dependent. */
+    char buf[80];
+    switch (as.state) {
+        case AS_OFF:
+        case AS_ON:
+            lv_label_set_text(st->distance_label, "Tap ARM when ready");
+            lv_label_set_text(st->distance_template_label, "");
+            break;
+        case AS_ARMING:
+            snprintf(buf, sizeof(buf),
+                     "Collecting samples\n%d / %d  (%.0f%%)",
+                     as.arming_samples, as.arming_target,
+                     as.arming_progress * 100.0);
+            lv_label_set_text(st->distance_label, buf);
+            lv_label_set_text(st->distance_template_label, "");
+            break;
+        case AS_ARMED:
+        case AS_ALARM:
+        case AS_MUTED:
+            snprintf(buf, sizeof(buf), "%.0f ft",
+                     as.current_distance_m * 3.28084);
+            lv_label_set_text(st->distance_label, buf);
+            snprintf(buf, sizeof(buf), "Alarm at %.0f ft",
+                     as.alarm_distance_m * 3.28084);
+            lv_label_set_text(st->distance_template_label, buf);
+            /* Feed live distance to the Alarm modal if it's open. */
+            if (as.state == AS_ALARM || as.state == AS_MUTED) {
+                ui_alarm_update(as.current_distance_m * 3.28084,
+                                as.alarm_distance_m * 3.28084, -1, -2147483647);
+            }
+            break;
+    }
+
+    /* Plot placeholder — show centroid + current distance during
+     * ARMED, raw lat/lon during OFF/ON, sample count during ARMING. */
+    gps_fix_t f; gps_source_get(&f);
+    if (as.state == AS_ARMED || as.state == AS_ALARM || as.state == AS_MUTED) {
+        if (as.centroid_valid && f.pos_valid) {
+            snprintf(buf, sizeof(buf),
+                     "ANCHOR @ %.5f, %.5f\nBOAT   @ %.5f, %.5f\nDistance %.1f m",
+                     as.centroid.lat, as.centroid.lon,
+                     f.latitude, f.longitude,
+                     as.current_distance_m);
+        } else {
+            snprintf(buf, sizeof(buf), "(waiting for fix)");
+        }
+        lv_label_set_text(st->plot_placeholder_label, buf);
+        lv_obj_set_style_text_color(st->plot_placeholder_label,
+            (as.state == AS_ALARM) ? UI_COLOR(STATE_ALARM) : UI_COLOR(STATE_ARMED),
+            LV_PART_MAIN);
+    } else if (as.state == AS_ARMING) {
+        snprintf(buf, sizeof(buf), "ARMING\nsamples %d / %d",
+                 as.arming_samples, as.arming_target);
+        lv_label_set_text(st->plot_placeholder_label, buf);
+        lv_obj_set_style_text_color(st->plot_placeholder_label,
+                                     UI_COLOR(STATE_ARMING), LV_PART_MAIN);
+    } else if (gps_fresh && f.pos_valid) {
+        snprintf(buf, sizeof(buf),
+                 "GPS LIVE\n%.5f, %.5f\n%d sats   %.1f kts",
+                 f.latitude, f.longitude,
+                 f.satellites,
+                 f.sog_valid ? f.sog_kts : 0.0);
         lv_label_set_text(st->plot_placeholder_label, buf);
         lv_obj_set_style_text_color(st->plot_placeholder_label,
                                      UI_COLOR(STATE_ARMED), LV_PART_MAIN);

@@ -38,6 +38,10 @@ idf_component_register(
         "nmea0183.c"
         "gps_source.c"
         "tcp_gateway.c"
+
+        # Anchor logic — pure C geometry + state machine
+        "anchor_geo.c"
+        "anchor_state.c"
     INCLUDE_DIRS
         "."
         "vendor/tomlc99"

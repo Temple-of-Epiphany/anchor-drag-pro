@@ -52,7 +52,18 @@
 #include "wifi_manager.h"
 #include "tcp_gateway.h"
 #include "gps_source.h"
+#include "anchor_state.h"
+#include "anchor_geo.h"
 #include "lvgl.h"
+
+/* Adapter: forward gps_source fixes into the anchor state machine. */
+static void main_on_gps_fix(const gps_fix_t *fix, void *user_data)
+{
+    (void) user_data;
+    if (!fix) return;
+    geo_point_t p = { .lat = fix->latitude, .lon = fix->longitude };
+    anchor_state_on_fix(p, fix->pos_valid);
+}
 
 /* Bench-test default for the n2k-simulator-pro stream. v0.2 hardcodes
  * this; #63 will pull host/port from cfg.gps.url.url. */
@@ -62,7 +73,7 @@
 static const char *TAG = "anchor_drag_pro";
 
 /* Phase B (#69) — LVGL infrastructure + Splash */
-#define FIRMWARE_VERSION_STRING "0.2.22"
+#define FIRMWARE_VERSION_STRING "0.2.23"
 
 /* The active configuration — read by anchor_config_load(), then consumed
  * by other modules (e.g., screen_monitor reads g_config.anchor.options[]
@@ -250,6 +261,13 @@ void app_main(void)
      * gateway task waits internally for WiFi to come up, then connects
      * and starts pushing parsed NMEA into gps_source. */
     gps_source_init();
+
+    /* Anchor state machine — fed by the gps_source subscriber. Uses
+     * the currently selected preset (meters) and the arming_seconds. */
+    double alarm_m = g_config.anchor.options[g_config.anchor.selected_idx].meters;
+    anchor_state_init(alarm_m, g_config.anchor.arming_seconds);
+    gps_source_subscribe(main_on_gps_fix, NULL);
+
     if (tcp_gateway_start(SIM_HOST, SIM_PORT) == ESP_OK) {
         report_row(SPLASH_ROW_GPS, SPLASH_STATUS_RUNNING, "waiting for WiFi...");
     } else {

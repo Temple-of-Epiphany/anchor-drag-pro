@@ -71,6 +71,13 @@ void gps_source_get(gps_fix_t *out);
  * "_valid" flag is set. */
 bool gps_source_is_fresh(uint32_t max_age_ms);
 
+/* Subscribe to per-fix events. Fires from inside gps_source_ingest_nmea
+ * whenever a sentence updates pos_valid. Single subscriber for v0.2 —
+ * the anchor_state machine. Callback runs in the gateway task; keep
+ * it short (no LVGL calls). */
+typedef void (*gps_source_fix_cb)(const gps_fix_t *fix, void *user_data);
+void gps_source_subscribe(gps_source_fix_cb cb, void *user_data);
+
 #ifdef __cplusplus
 }
 #endif

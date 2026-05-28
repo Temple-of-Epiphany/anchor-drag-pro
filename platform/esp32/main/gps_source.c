@@ -11,9 +11,11 @@
 #include "freertos/semphr.h"
 #include <string.h>
 
-static gps_fix_t          s_fix      = { 0 };
-static SemaphoreHandle_t  s_mtx      = NULL;
-static bool               s_initted  = false;
+static gps_fix_t          s_fix       = { 0 };
+static SemaphoreHandle_t  s_mtx       = NULL;
+static bool               s_initted   = false;
+static gps_source_fix_cb  s_sub_cb    = NULL;
+static void              *s_sub_user  = NULL;
 
 void gps_source_init(void)
 {
@@ -58,7 +60,26 @@ void gps_source_ingest_nmea(gps_source_t source, const nmea_fields_t *fields)
     s_fix.source         = source;
     s_fix.last_update_us = (uint64_t) esp_timer_get_time();
 
+    /* Snapshot for the subscriber so the callback doesn't hold the
+     * mutex (it may take its own lock). */
+    gps_fix_t snap = s_fix;
+    gps_source_fix_cb cb = s_sub_cb;
+    void *user = s_sub_user;
+
     xSemaphoreGive(s_mtx);
+
+    /* Fire the subscriber only on sentences that updated position. */
+    if (fields->pos_valid && cb) cb(&snap, user);
+}
+
+void gps_source_subscribe(gps_source_fix_cb cb, void *user_data)
+{
+    if (!s_initted) gps_source_init();
+    if (xSemaphoreTake(s_mtx, portMAX_DELAY) == pdTRUE) {
+        s_sub_cb   = cb;
+        s_sub_user = user_data;
+        xSemaphoreGive(s_mtx);
+    }
 }
 
 void gps_source_get(gps_fix_t *out)
