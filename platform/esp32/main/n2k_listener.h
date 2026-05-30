@@ -32,8 +32,13 @@ typedef struct {
     uint32_t  frames_per_sec;     /* rolling fps, updated ~1 Hz */
     uint64_t  last_frame_us;      /* esp_timer_get_time() of latest rx */
     uint32_t  last_frame_id;      /* 29-bit extended ID of latest rx */
+    uint32_t  last_frame_pgn;     /* decoded PGN of latest rx */
+    uint8_t   last_frame_src;     /* source address of latest rx */
+    uint8_t   last_frame_prio;    /* priority 0..7 (0 = highest) */
     uint8_t   last_frame_dlc;     /* data length, 0..8 */
     uint8_t   last_frame_data[8]; /* raw payload of latest rx */
+    uint16_t  distinct_pgns_seen; /* count of unique PGNs since start */
+    uint16_t  distinct_srcs_seen; /* count of unique source addresses */
     uint32_t  bus_off_count;      /* TWAI bus-off recoveries since start */
     uint32_t  rx_error_count;     /* twai_receive non-OK returns */
 } n2k_listener_status_t;

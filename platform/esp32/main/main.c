@@ -74,7 +74,7 @@ static void main_on_gps_fix(const gps_fix_t *fix, void *user_data)
 static const char *TAG = "anchor_drag_pro";
 
 /* Phase B (#69) — LVGL infrastructure + Splash */
-#define FIRMWARE_VERSION_STRING "0.2.23"
+#define FIRMWARE_VERSION_STRING "0.2.24"
 
 /* The active configuration — read by anchor_config_load(), then consumed
  * by other modules (e.g., screen_monitor reads g_config.anchor.options[]

@@ -96,8 +96,13 @@ static void refresh_cb(lv_timer_t *t)
     /* Position source line */
     if (fresh) {
         uint32_t age_ms = (uint32_t) (((uint64_t) esp_timer_get_time() - f.last_update_us) / 1000);
-        snprintf(buf, sizeof(buf), "Source: URL  updated %lu ms ago",
-                 (unsigned long) age_ms);
+        const char *src = (f.source == GPS_SRC_N2K)      ? "N2K"     :
+                          (f.source == GPS_SRC_URL)      ? "URL"     :
+                          (f.source == GPS_SRC_SERIAL)   ? "NMEA"    :
+                          (f.source == GPS_SRC_INTERNAL) ? "Onboard" :
+                                                            "none";
+        snprintf(buf, sizeof(buf), "Source: %s  updated %lu ms ago",
+                 src, (unsigned long) age_ms);
     } else {
         snprintf(buf, sizeof(buf), "Source: none");
     }
@@ -108,8 +113,12 @@ static void refresh_cb(lv_timer_t *t)
         snprintf(buf, sizeof(buf), "%03d°  (%s)",
                  (int) f.heading_deg, f.heading_is_true ? "true" : "mag");
         lv_label_set_text(st->hdg_lbl, buf);
-        lv_label_set_text(st->hdg_source_lbl,
-                          f.source == GPS_SRC_URL ? "Source: URL" : "Source: NMEA");
+        const char *src = (f.source == GPS_SRC_N2K)      ? "Source: N2K"     :
+                          (f.source == GPS_SRC_URL)      ? "Source: URL"     :
+                          (f.source == GPS_SRC_SERIAL)   ? "Source: NMEA"    :
+                          (f.source == GPS_SRC_INTERNAL) ? "Source: Onboard" :
+                                                            "Source: none";
+        lv_label_set_text(st->hdg_source_lbl, src);
     } else {
         lv_label_set_text(st->hdg_lbl, "––");
         lv_label_set_text(st->hdg_source_lbl, "Source: none");
