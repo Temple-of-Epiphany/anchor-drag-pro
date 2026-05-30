@@ -52,6 +52,7 @@
 #include "wifi_manager.h"
 #include "tcp_gateway.h"
 #include "gps_source.h"
+#include "n2k_listener.h"
 #include "anchor_state.h"
 #include "anchor_geo.h"
 #include "lvgl.h"
@@ -274,6 +275,15 @@ void app_main(void)
         report_row(SPLASH_ROW_GPS, SPLASH_STATUS_FAIL, "gateway init failed");
     }
     report_row(SPLASH_ROW_IMU,  SPLASH_STATUS_SKIP, "not implemented");
+
+    /* N2K / TWAI listener (#83 minimum slice). LISTEN_ONLY at 250 kbps;
+     * no PGN decode yet — just raw frame logging + fps for the
+     * Connections screen. */
+    if (n2k_listener_init() == ESP_OK) {
+        ESP_LOGI(TAG, "N2K listener up (LISTEN_ONLY, 250 kbps)");
+    } else {
+        ESP_LOGW(TAG, "N2K listener init failed — Connections row will show offline");
+    }
 
     ESP_LOGI(TAG, "--- Phase B (#69): bring up display + LVGL + Splash ---");
 

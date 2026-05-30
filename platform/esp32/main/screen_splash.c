@@ -96,32 +96,31 @@ esp_err_t screen_splash_show(const char *firmware_version)
     lv_obj_set_style_border_width(s_screen, 0,                   LV_PART_MAIN);
     lv_obj_clear_flag        (s_screen, LV_OBJ_FLAG_SCROLLABLE);
 
-    /* Brand block — logo (#79) + wordmark + version, top centre.
-     * Layout fits a 480 px tall LCD: logo y=10..150, wordmark y=158,
-     * version y=200, self-test panel y=232 (240 tall → ends y=472). */
+    /* Brand block — logo (#79) + combined wordmark/version on one
+     * line, top centre. Combining saves ~40 px vs the two-line layout
+     * so the self-test panel can grow back to ~280 px and fit all 10
+     * rows without clipping at the LCD edge (#82).
+     * Layout for a 480 px LCD: logo y=8..148, wordmark y=156, panel
+     * y=192 (280 tall → ends y=472, 8 px to bottom edge). */
     lv_obj_t *logo = lv_img_create(s_screen);
     lv_img_set_src(logo, &anchor_logo_140);
-    lv_obj_align(logo, LV_ALIGN_TOP_MID, 0, 10);
+    lv_obj_align(logo, LV_ALIGN_TOP_MID, 0, 8);
 
+    char title_buf[80];
+    snprintf(title_buf, sizeof(title_buf), "Anchor Drag Pro   v%s",
+             firmware_version);
     lv_obj_t *title = lv_label_create(s_screen);
-    lv_label_set_text(title, "Anchor Drag Pro");
+    lv_label_set_text(title, title_buf);
     lv_obj_set_style_text_color(title, UI_COLOR(TEXT_BODY_STRONG), LV_PART_MAIN);
-    lv_obj_set_style_text_font (title, &lv_font_montserrat_32,     LV_PART_MAIN);
-    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 158);
+    lv_obj_set_style_text_font (title, &lv_font_montserrat_24,     LV_PART_MAIN);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 156);
 
-    char ver_buf[64];
-    snprintf(ver_buf, sizeof(ver_buf), "Firmware v%s", firmware_version);
-
-    lv_obj_t *version = lv_label_create(s_screen);
-    lv_label_set_text(version, ver_buf);
-    lv_obj_set_style_text_color(version, UI_COLOR(TEXT_BODY_DIM), LV_PART_MAIN);
-    lv_obj_set_style_text_font (version, &lv_font_montserrat_16,  LV_PART_MAIN);
-    lv_obj_align(version, LV_ALIGN_TOP_MID, 0, 200);
-
-    /* Self-test panel — sits below the brand. */
+    /* Self-test panel — sits below the brand. Row pitch tightened to
+     * 22 px (height 20 + pad 2) so 10 rows fit inside the panel's
+     * 248 px usable area (280 minus 16 top/bottom pad). */
     lv_obj_t *panel = lv_obj_create(s_screen);
-    lv_obj_set_size(panel, 600, 240);
-    lv_obj_align(panel, LV_ALIGN_TOP_MID, 0, 232);
+    lv_obj_set_size(panel, 600, 280);
+    lv_obj_align(panel, LV_ALIGN_TOP_MID, 0, 192);
     lv_obj_set_style_bg_color    (panel, UI_COLOR(SURFACE_ELEVATED), LV_PART_MAIN);
     lv_obj_set_style_bg_opa      (panel, LV_OPA_COVER,               LV_PART_MAIN);
     lv_obj_set_style_border_color(panel, UI_COLOR(SURFACE_BORDER),   LV_PART_MAIN);
@@ -131,7 +130,7 @@ esp_err_t screen_splash_show(const char *firmware_version)
     lv_obj_set_layout            (panel, LV_LAYOUT_FLEX);
     lv_obj_set_flex_flow         (panel, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align        (panel, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
-    lv_obj_set_style_pad_row     (panel, 4,                          LV_PART_MAIN);
+    lv_obj_set_style_pad_row     (panel, 2,                          LV_PART_MAIN);
     lv_obj_clear_flag            (panel, LV_OBJ_FLAG_SCROLLABLE);
 
     /* Pre-build all 10 rows with empty glyphs. Rows fill in as the boot
@@ -139,7 +138,7 @@ esp_err_t screen_splash_show(const char *firmware_version)
     for (int i = 0; i < SPLASH_ROW_COUNT; i++) {
         lv_obj_t *row = lv_obj_create(panel);
         lv_obj_set_width(row, lv_pct(100));
-        lv_obj_set_height(row, 22);
+        lv_obj_set_height(row, 20);
         lv_obj_set_style_bg_opa(row, LV_OPA_TRANSP, LV_PART_MAIN);
         lv_obj_set_style_border_width(row, 0, LV_PART_MAIN);
         lv_obj_set_style_pad_all(row, 0, LV_PART_MAIN);

@@ -44,6 +44,9 @@ idf_component_register(
         "anchor_geo.c"
         "anchor_state.c"
 
+        # NMEA 2000 / TWAI listener (#83 minimum slice)
+        "n2k_listener.c"
+
         # Brand assets (#79)
         "assets/generated/anchor_logo_140.c"
     INCLUDE_DIRS
@@ -62,6 +65,7 @@ idf_component_register(
 
         # peripherals
         driver
+        esp_driver_twai  # N2K listener (#83)
 
         # SD card stack
         fatfs

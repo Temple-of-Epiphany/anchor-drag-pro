@@ -18,6 +18,7 @@
 #include "wifi_manager.h"
 #include "tcp_gateway.h"
 #include "gps_source.h"
+#include "n2k_listener.h"
 #include "esp_log.h"
 #include "lvgl.h"
 #include <stdio.h>
@@ -222,7 +223,7 @@ lv_obj_t *screen_connections_create(void)
         conn_row_status_t  status;
         const char        *detail;
     } defaults[] = {
-        { CONN_ROW_N2K,        CONN_STATUS_DISABLED, "TWAI driver not yet implemented" },
+        { CONN_ROW_N2K,        CONN_STATUS_SCANNING, "listening for frames..." },
         { CONN_ROW_GPS,        CONN_STATUS_DISABLED, "no source configured" },
         { CONN_ROW_IMU,        CONN_STATUS_DISABLED, "no source configured" },
         { CONN_ROW_SERIAL_GPS, CONN_STATUS_DISABLED, "disabled" },
@@ -290,6 +291,27 @@ static void refresh_cb(lv_timer_t *t)
     } else if (g.host[0]) {
         snprintf(buf, sizeof(buf), "%s:%d  retrying...", hbuf, g.port);
         screen_connections_set_row(scr, CONN_ROW_URL, CONN_STATUS_SCANNING, buf);
+    }
+
+    /* N2K bus — TWAI LISTEN_ONLY listener (#83). Show fps when frames
+     * are flowing, "no traffic" when the listener is up but quiet. */
+    n2k_listener_status_t n;
+    n2k_listener_get_status(&n);
+    if (!n.started) {
+        screen_connections_set_row(scr, CONN_ROW_N2K, CONN_STATUS_DISABLED,
+                                    "TWAI listener not started");
+    } else if (n2k_listener_is_fresh(2000)) {
+        snprintf(buf, sizeof(buf), "%lu fps  total %lu  id=0x%08lX",
+                 (unsigned long) n.frames_per_sec,
+                 (unsigned long) n.frames_total,
+                 (unsigned long) n.last_frame_id);
+        screen_connections_set_row(scr, CONN_ROW_N2K, CONN_STATUS_OK, buf);
+    } else if (n.frames_total > 0) {
+        snprintf(buf, sizeof(buf), "stale  last %lu frames", (unsigned long) n.frames_total);
+        screen_connections_set_row(scr, CONN_ROW_N2K, CONN_STATUS_WARN, buf);
+    } else {
+        screen_connections_set_row(scr, CONN_ROW_N2K, CONN_STATUS_SCANNING,
+                                    "no traffic yet");
     }
 
     /* GPS source (URL ingest) */
