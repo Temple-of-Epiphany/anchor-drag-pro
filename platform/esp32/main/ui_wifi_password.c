@@ -149,6 +149,24 @@ ui_modal_handle_t *ui_wifi_password_show(const ui_wifi_password_params_t *p)
     lv_checkbox_set_text(st->show_chk, "Show password");
     lv_obj_set_style_text_color(st->show_chk, UI_COLOR(TEXT_BODY),   LV_PART_MAIN);
     lv_obj_set_style_text_font (st->show_chk, &lv_font_montserrat_16, LV_PART_MAIN);
+    /* Explicitly style the indicator box — LVGL's default is white-on-
+     * the-current-surface, which is white-on-white against our modal
+     * background and made the checkbox impossible to read. */
+    lv_obj_set_style_bg_color    (st->show_chk, UI_COLOR(BG_APP),
+                                   LV_PART_INDICATOR);
+    lv_obj_set_style_bg_opa      (st->show_chk, LV_OPA_COVER,
+                                   LV_PART_INDICATOR);
+    lv_obj_set_style_border_color(st->show_chk, UI_COLOR(TEXT_BODY),
+                                   LV_PART_INDICATOR);
+    lv_obj_set_style_border_width(st->show_chk, 2,
+                                   LV_PART_INDICATOR);
+    lv_obj_set_style_radius      (st->show_chk, 4,
+                                   LV_PART_INDICATOR);
+    /* Checked state: filled with accent so the tick stands out. */
+    lv_obj_set_style_bg_color    (st->show_chk, UI_COLOR(ACTION_PRIMARY),
+                                   LV_PART_INDICATOR | LV_STATE_CHECKED);
+    lv_obj_set_style_border_color(st->show_chk, UI_COLOR(ACTION_PRIMARY),
+                                   LV_PART_INDICATOR | LV_STATE_CHECKED);
     lv_obj_add_event_cb(st->show_chk, on_show_toggled, LV_EVENT_VALUE_CHANGED, st);
 
     /* Keyboard */

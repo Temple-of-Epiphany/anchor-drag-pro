@@ -43,6 +43,9 @@ idf_component_register(
         # Anchor logic — pure C geometry + state machine
         "anchor_geo.c"
         "anchor_state.c"
+
+        # Brand assets (#79)
+        "assets/generated/anchor_logo_140.c"
     INCLUDE_DIRS
         "."
         "vendor/tomlc99"

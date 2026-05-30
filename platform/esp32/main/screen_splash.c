@@ -15,6 +15,7 @@
 #include "screen_splash.h"
 #include "ui_tokens.h"
 #include "lvgl_init.h"
+#include "assets/anchor_logo.h"
 #include "esp_log.h"
 #include "lvgl.h"
 #include <stdio.h>
@@ -95,12 +96,18 @@ esp_err_t screen_splash_show(const char *firmware_version)
     lv_obj_set_style_border_width(s_screen, 0,                   LV_PART_MAIN);
     lv_obj_clear_flag        (s_screen, LV_OBJ_FLAG_SCROLLABLE);
 
-    /* Brand block — title + version, top centre. */
+    /* Brand block — logo (#79) + wordmark + version, top centre.
+     * Layout fits a 480 px tall LCD: logo y=10..150, wordmark y=158,
+     * version y=200, self-test panel y=232 (240 tall → ends y=472). */
+    lv_obj_t *logo = lv_img_create(s_screen);
+    lv_img_set_src(logo, &anchor_logo_140);
+    lv_obj_align(logo, LV_ALIGN_TOP_MID, 0, 10);
+
     lv_obj_t *title = lv_label_create(s_screen);
     lv_label_set_text(title, "Anchor Drag Pro");
     lv_obj_set_style_text_color(title, UI_COLOR(TEXT_BODY_STRONG), LV_PART_MAIN);
     lv_obj_set_style_text_font (title, &lv_font_montserrat_32,     LV_PART_MAIN);
-    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 48);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 158);
 
     char ver_buf[64];
     snprintf(ver_buf, sizeof(ver_buf), "Firmware v%s", firmware_version);
@@ -109,12 +116,12 @@ esp_err_t screen_splash_show(const char *firmware_version)
     lv_label_set_text(version, ver_buf);
     lv_obj_set_style_text_color(version, UI_COLOR(TEXT_BODY_DIM), LV_PART_MAIN);
     lv_obj_set_style_text_font (version, &lv_font_montserrat_16,  LV_PART_MAIN);
-    lv_obj_align(version, LV_ALIGN_TOP_MID, 0, 96);
+    lv_obj_align(version, LV_ALIGN_TOP_MID, 0, 200);
 
     /* Self-test panel — sits below the brand. */
     lv_obj_t *panel = lv_obj_create(s_screen);
-    lv_obj_set_size(panel, 600, 280);
-    lv_obj_align(panel, LV_ALIGN_TOP_MID, 0, 160);
+    lv_obj_set_size(panel, 600, 240);
+    lv_obj_align(panel, LV_ALIGN_TOP_MID, 0, 232);
     lv_obj_set_style_bg_color    (panel, UI_COLOR(SURFACE_ELEVATED), LV_PART_MAIN);
     lv_obj_set_style_bg_opa      (panel, LV_OPA_COVER,               LV_PART_MAIN);
     lv_obj_set_style_border_color(panel, UI_COLOR(SURFACE_BORDER),   LV_PART_MAIN);
