@@ -27,6 +27,16 @@ static const char *TAG = "sd_card";
 #define SD_SPI_NO_CS        ((gpio_num_t) -1)
 #define SD_SPI_FREQ_KHZ     20000   /* 20 MHz default; SDSPI tops at this */
 
+/* Intermittent boot-mount failures (#80) come from the SD chip-select
+ * living on the CH422G I/O expander, which shares I2C0 with the touch
+ * controller, RTC, and the CH422G's own backlight/reset traffic. The
+ * single I2C write that parks CS LOW can lose bus arbitration during
+ * early-boot contention, so the card never sees CS asserted and the
+ * mount probe fails. Re-assert CS + re-run the mount a few times with
+ * a settle delay before giving up. */
+#define SD_MOUNT_MAX_ATTEMPTS    3
+#define SD_MOUNT_RETRY_DELAY_MS  120
+
 static sdmmc_card_t *s_card     = NULL;
 static bool          s_mounted  = false;
 static sdmmc_host_t  s_host     = SDSPI_HOST_DEFAULT();
@@ -70,17 +80,8 @@ esp_err_t sd_card_init(void)
              SD_PIN_MOSI, SD_PIN_MISO, SD_PIN_SCK,
              CH422G_EXIO_SD_CS);
 
-    /* Step 1: assert SD CS via CH422G (drive EXIO4 LOW). The SDSPI driver
-     * will not toggle CS itself — we hold it asserted for the SD lifetime. */
-    esp_err_t err = ch422g_sd_cs(true);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "ch422g_sd_cs(true) failed: %s", esp_err_to_name(err));
-        return err;
-    }
-    vTaskDelay(pdMS_TO_TICKS(10)); /* let CS settle before SPI traffic */
-
-    /* Step 2: initialize SPI bus. Tolerate "already initialized" (other
-     * code may have set it up — currently nothing else uses SPI2_HOST). */
+    /* Step 1: initialise SPI bus once. Tolerate "already initialised"
+     * (no other code uses SPI2_HOST today, but be defensive). */
     spi_bus_config_t bus_cfg = {
         .mosi_io_num     = SD_PIN_MOSI,
         .miso_io_num     = SD_PIN_MISO,
@@ -89,19 +90,17 @@ esp_err_t sd_card_init(void)
         .quadhd_io_num   = -1,
         .max_transfer_sz = 4000,
     };
-    err = spi_bus_initialize(SD_SPI_HOST, &bus_cfg, SDSPI_DEFAULT_DMA);
+    esp_err_t err = spi_bus_initialize(SD_SPI_HOST, &bus_cfg, SDSPI_DEFAULT_DMA);
     if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
         ESP_LOGE(TAG, "spi_bus_initialize failed: %s", esp_err_to_name(err));
-        ch422g_sd_cs(false);
         return err;
     }
 
-    /* Step 3: configure SDSPI device. gpio_cs = -1 = no CS toggle. */
+    /* Step 2: SDSPI device + mount config (constant across retries). */
     sdspi_device_config_t slot_cfg = SDSPI_DEVICE_CONFIG_DEFAULT();
     slot_cfg.gpio_cs = SD_SPI_NO_CS;
     slot_cfg.host_id = SD_SPI_HOST;
 
-    /* Step 4: mount the FAT filesystem. This is the long-running call. */
     esp_vfs_fat_sdmmc_mount_config_t mount_cfg = {
         .format_if_mount_failed = false, /* never auto-format — that's destructive */
         .max_files              = 8,
@@ -110,25 +109,54 @@ esp_err_t sd_card_init(void)
 
     s_host.slot = SD_SPI_HOST;
 
-    bool wdt_was = wdt_pause();
-    err = esp_vfs_fat_sdspi_mount(SD_MOUNT_POINT, &s_host, &slot_cfg,
-                                    &mount_cfg, &s_card);
-    wdt_resume(wdt_was);
-
-    if (err != ESP_OK) {
-        if (err == ESP_FAIL) {
-            ESP_LOGE(TAG, "mount failed — card may be unformatted or corrupt "
-                          "(format_if_mount_failed is intentionally disabled)");
-        } else {
-            ESP_LOGE(TAG, "mount failed: %s", esp_err_to_name(err));
+    /* Step 3: retry loop — see SD_MOUNT_* rationale above (#80). Each
+     * attempt re-asserts CS through the CH422G; if the I2C write was
+     * lost in early-boot bus contention the next attempt usually wins. */
+    err = ESP_FAIL;
+    for (int attempt = 1; attempt <= SD_MOUNT_MAX_ATTEMPTS; attempt++) {
+        esp_err_t cs_err = ch422g_sd_cs(true);
+        if (cs_err != ESP_OK) {
+            ESP_LOGW(TAG, "attempt %d/%d: ch422g_sd_cs(true): %s",
+                     attempt, SD_MOUNT_MAX_ATTEMPTS, esp_err_to_name(cs_err));
+            vTaskDelay(pdMS_TO_TICKS(SD_MOUNT_RETRY_DELAY_MS));
+            continue;
         }
+        vTaskDelay(pdMS_TO_TICKS(10)); /* let CS settle before SPI traffic */
+
+        bool wdt_was = wdt_pause();
+        err = esp_vfs_fat_sdspi_mount(SD_MOUNT_POINT, &s_host, &slot_cfg,
+                                        &mount_cfg, &s_card);
+        wdt_resume(wdt_was);
+
+        if (err == ESP_OK) {
+            s_mounted = true;
+            if (attempt > 1) {
+                ESP_LOGW(TAG, "mounted at %s on attempt %d/%d",
+                         SD_MOUNT_POINT, attempt, SD_MOUNT_MAX_ATTEMPTS);
+            } else {
+                ESP_LOGI(TAG, "mounted at %s", SD_MOUNT_POINT);
+            }
+            return ESP_OK;
+        }
+
+        ESP_LOGW(TAG, "attempt %d/%d: esp_vfs_fat_sdspi_mount: %s",
+                 attempt, SD_MOUNT_MAX_ATTEMPTS, esp_err_to_name(err));
+        s_card = NULL;
         ch422g_sd_cs(false);
-        return err;
+        if (attempt < SD_MOUNT_MAX_ATTEMPTS) {
+            vTaskDelay(pdMS_TO_TICKS(SD_MOUNT_RETRY_DELAY_MS));
+        }
     }
 
-    s_mounted = true;
-    ESP_LOGI(TAG, "mounted at %s", SD_MOUNT_POINT);
-    return ESP_OK;
+    if (err == ESP_FAIL) {
+        ESP_LOGE(TAG, "all %d mount attempts failed — card may be unformatted "
+                      "or absent (format_if_mount_failed is intentionally disabled)",
+                 SD_MOUNT_MAX_ATTEMPTS);
+    } else {
+        ESP_LOGE(TAG, "all %d mount attempts failed (last: %s)",
+                 SD_MOUNT_MAX_ATTEMPTS, esp_err_to_name(err));
+    }
+    return err;
 }
 
 bool sd_card_is_mounted(void)

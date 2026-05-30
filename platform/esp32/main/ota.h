@@ -77,6 +77,53 @@ esp_err_t ota_check_and_apply_from_sd(void);
  */
 void ota_log_status(void);
 
+
+/* ============================================================
+ * UI-driven OTA (touchscreen confirmation + progress)
+ *
+ * The boot path (ota_check_and_apply_from_sd) runs before LVGL is up
+ * and auto-installs. These two functions let the Diagnostics screen
+ * offer a manual "Check for update" flow once the UI is available:
+ *   ota_scan_sd()  — non-blocking scan; reports whether a newer bin
+ *                    exists and the from/to versions.
+ *   ota_apply()    — verify SHA + flash a scanned update, reporting
+ *                    progress through a callback. Reboots on success
+ *                    (does not return); returns an error on failure.
+ * ============================================================ */
+
+typedef struct {
+    bool available;                 /* true if new_* > running_* */
+    int  running_major, running_minor, running_patch;
+    int  new_major, new_minor, new_patch;
+    char bin_path[256];
+    char sha_path[256];
+} ota_update_info_t;
+
+/* Scan SD for the newest valid candidate. Fills *info. Returns:
+ *   ESP_OK                — scan ran; check info->available
+ *   ESP_ERR_INVALID_STATE — SD not mounted */
+esp_err_t ota_scan_sd(ota_update_info_t *info);
+
+/* Progress phases reported through ota_progress_cb. */
+typedef enum {
+    OTA_PHASE_VERIFY = 0,   /* computing/comparing SHA256 */
+    OTA_PHASE_FLASH,        /* writing partition */
+    OTA_PHASE_DONE,         /* about to reboot */
+    OTA_PHASE_ERROR,        /* failed — see message */
+} ota_phase_t;
+
+/* pct is 0..100 within the current phase. msg is a short human string
+ * (may be NULL). Called from the task that invoked ota_apply(). */
+typedef void (*ota_progress_cb)(ota_phase_t phase, int pct,
+                                 const char *msg, void *user);
+
+/* Apply a scanned update: verify SHA, flash, set boot partition, reboot.
+ * Does NOT return on success. Returns an esp_err_t on failure (after
+ * reporting OTA_PHASE_ERROR through cb). Safe to call from a worker
+ * task; do NOT call from the LVGL task (it blocks for the whole flash). */
+esp_err_t ota_apply(const ota_update_info_t *info,
+                     ota_progress_cb cb, void *user);
+
 #ifdef __cplusplus
 }
 #endif

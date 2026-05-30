@@ -592,6 +592,16 @@ static void save_to_nvs(const anchor_config_t *in)
     }
 }
 
+/* Public wrapper around save_to_nvs() so other modules (e.g. the
+ * on-device WiFi editor) can persist a config change without going
+ * through the SD writer (#63). */
+esp_err_t anchor_config_save_nvs(const anchor_config_t *in)
+{
+    if (!in) return ESP_ERR_INVALID_ARG;
+    save_to_nvs(in);
+    return ESP_OK;
+}
+
 /* ---- Three-tier load ---------------------------------------------- */
 
 esp_err_t anchor_config_load(anchor_config_t *out)
